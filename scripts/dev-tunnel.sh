@@ -21,6 +21,12 @@ Optional:
 - NOTION_LOCAL_OPS_WORKSPACE_ROOT (defaults to repo root)
 - NOTION_LOCAL_OPS_HOST (defaults to 127.0.0.1)
 - NOTION_LOCAL_OPS_PORT (defaults to 8766)
+- NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG (named tunnel config path)
+- NOTION_LOCAL_OPS_TUNNEL_NAME (optional override for cloudflared tunnel run)
+
+If ./cloudflared.local.yml or ./cloudflared.local.yaml exists, this script
+uses that named tunnel config automatically. Otherwise it falls back to a
+cloudflared quick tunnel.
 EOF
 }
 
@@ -50,6 +56,35 @@ load_env_file() {
     source "${ROOT_DIR}/.env"
     set +a
   fi
+}
+
+resolve_path() {
+  local value="$1"
+  if [[ "${value}" = /* ]]; then
+    printf '%s\n' "${value}"
+    return 0
+  fi
+  printf '%s\n' "${ROOT_DIR}/${value}"
+}
+
+pick_cloudflared_config() {
+  local candidate
+
+  if [[ -n "${NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG:-}" ]]; then
+    resolve_path "${NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG}"
+    return 0
+  fi
+
+  for candidate in \
+    "${ROOT_DIR}/cloudflared.local.yml" \
+    "${ROOT_DIR}/cloudflared.local.yaml"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 wait_for_server() {
@@ -123,6 +158,8 @@ OVERRIDE_PORT="${NOTION_LOCAL_OPS_PORT:-}"
 OVERRIDE_WORKSPACE_ROOT="${NOTION_LOCAL_OPS_WORKSPACE_ROOT:-}"
 OVERRIDE_STATE_DIR="${NOTION_LOCAL_OPS_STATE_DIR:-}"
 OVERRIDE_AUTH_TOKEN="${NOTION_LOCAL_OPS_AUTH_TOKEN:-}"
+OVERRIDE_CLOUDFLARED_CONFIG="${NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG:-}"
+OVERRIDE_TUNNEL_NAME="${NOTION_LOCAL_OPS_TUNNEL_NAME:-}"
 OVERRIDE_CODEX_COMMAND="${NOTION_LOCAL_OPS_CODEX_COMMAND:-}"
 OVERRIDE_CLAUDE_COMMAND="${NOTION_LOCAL_OPS_CLAUDE_COMMAND:-}"
 OVERRIDE_COMMAND_TIMEOUT="${NOTION_LOCAL_OPS_COMMAND_TIMEOUT:-}"
@@ -140,6 +177,14 @@ fi
 
 if [[ -n "${OVERRIDE_AUTH_TOKEN}" ]]; then
   export NOTION_LOCAL_OPS_AUTH_TOKEN="${OVERRIDE_AUTH_TOKEN}"
+fi
+
+if [[ -n "${OVERRIDE_CLOUDFLARED_CONFIG}" ]]; then
+  export NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG="${OVERRIDE_CLOUDFLARED_CONFIG}"
+fi
+
+if [[ -n "${OVERRIDE_TUNNEL_NAME}" ]]; then
+  export NOTION_LOCAL_OPS_TUNNEL_NAME="${OVERRIDE_TUNNEL_NAME}"
 fi
 
 if [[ -n "${OVERRIDE_CODEX_COMMAND}" ]]; then
@@ -179,6 +224,22 @@ fi
 echo "MCP SSE endpoint: ${SERVER_URL}/mcp"
 echo "Workspace root: ${NOTION_LOCAL_OPS_WORKSPACE_ROOT}"
 echo "Server log: ${SERVER_LOG}"
-echo "Starting cloudflared tunnel. Press Ctrl+C to stop both processes."
 
-cloudflared tunnel --url "${SERVER_URL}"
+if CLOUDFLARED_CONFIG="$(pick_cloudflared_config)"; then
+  if [[ ! -f "${CLOUDFLARED_CONFIG}" ]]; then
+    echo "cloudflared config not found: ${CLOUDFLARED_CONFIG}" >&2
+    exit 1
+  fi
+
+  echo "Starting named cloudflared tunnel. Press Ctrl+C to stop both processes."
+  echo "cloudflared config: ${CLOUDFLARED_CONFIG}"
+
+  if [[ -n "${NOTION_LOCAL_OPS_TUNNEL_NAME:-}" ]]; then
+    cloudflared tunnel --config "${CLOUDFLARED_CONFIG}" run "${NOTION_LOCAL_OPS_TUNNEL_NAME}"
+  else
+    cloudflared tunnel --config "${CLOUDFLARED_CONFIG}" run
+  fi
+else
+  echo "Starting cloudflared quick tunnel. Press Ctrl+C to stop both processes."
+  cloudflared tunnel --url "${SERVER_URL}"
+fi

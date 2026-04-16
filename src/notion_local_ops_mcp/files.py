@@ -22,7 +22,7 @@ def _read_text(path: Path) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def list_files(path: Path, *, recursive: bool, limit: int) -> dict[str, object]:
+def list_files(path: Path, *, recursive: bool, limit: int, offset: int = 0) -> dict[str, object]:
     if not path.exists():
         return _error("path_not_found", f"Path not found: {path}", resolved_path=str(path))
     if not path.is_dir():
@@ -31,8 +31,11 @@ def list_files(path: Path, *, recursive: bool, limit: int) -> dict[str, object]:
     iterator = path.rglob("*") if recursive else path.iterdir()
     entries: list[dict[str, object]] = []
     truncated = False
-    for index, entry in enumerate(sorted(iterator, key=lambda item: str(item))):
-        if index >= limit:
+    entries_all = sorted(iterator, key=lambda item: str(item))
+    start = max(offset, 0)
+    selected = entries_all[start:]
+    for index, entry in enumerate(selected):
+        if limit != 0 and index >= limit:
             truncated = True
             break
         entries.append(
@@ -47,6 +50,7 @@ def list_files(path: Path, *, recursive: bool, limit: int) -> dict[str, object]:
         "base_path": str(path),
         "entries": entries,
         "truncated": truncated,
+        "next_offset": start + len(entries) if truncated else None,
     }
 
 
@@ -99,7 +103,13 @@ def write_file(path: Path, *, content: str) -> dict[str, object]:
     }
 
 
-def replace_in_file(path: Path, *, old_text: str, new_text: str) -> dict[str, object]:
+def replace_in_file(
+    path: Path,
+    *,
+    old_text: str,
+    new_text: str,
+    replace_all: bool = False,
+) -> dict[str, object]:
     if not path.exists():
         return _error("file_not_found", f"File not found: {path}", resolved_path=str(path))
     if not path.is_file():
@@ -113,7 +123,7 @@ def replace_in_file(path: Path, *, old_text: str, new_text: str) -> dict[str, ob
     occurrences = original.count(old_text)
     if occurrences == 0:
         return _error("match_not_found", "old_text was not found.", resolved_path=str(path))
-    if occurrences > 1:
+    if occurrences > 1 and not replace_all:
         return _error(
             "match_not_unique",
             f"old_text matched {occurrences} times; provide a unique fragment.",
@@ -121,9 +131,10 @@ def replace_in_file(path: Path, *, old_text: str, new_text: str) -> dict[str, ob
             occurrences=occurrences,
         )
 
-    path.write_text(original.replace(old_text, new_text, 1), encoding="utf-8")
+    replacements = occurrences if replace_all else 1
+    path.write_text(original.replace(old_text, new_text, replacements), encoding="utf-8")
     return {
         "success": True,
         "path": str(path),
-        "replacements": 1,
+        "replacements": replacements,
     }

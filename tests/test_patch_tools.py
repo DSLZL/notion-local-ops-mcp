@@ -1,0 +1,94 @@
+from pathlib import Path
+
+from notion_local_ops_mcp.patching import apply_patch
+
+
+def test_apply_patch_adds_file(tmp_path: Path) -> None:
+    result = apply_patch(
+        patch="\n".join(
+            [
+                "*** Begin Patch",
+                "*** Add File: notes.txt",
+                "+hello",
+                "+world",
+                "*** End Patch",
+            ]
+        ),
+        workspace_root=tmp_path,
+    )
+
+    assert result["success"] is True
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "hello\nworld\n"
+
+
+def test_apply_patch_updates_file_with_multiple_hunks(tmp_path: Path) -> None:
+    target = tmp_path / "app.py"
+    target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    result = apply_patch(
+        patch="\n".join(
+            [
+                "*** Begin Patch",
+                "*** Update File: app.py",
+                "@@",
+                " one",
+                "-two",
+                "+TWO",
+                " three",
+                "@@",
+                " three",
+                "-four",
+                "+FOUR",
+                "*** End Patch",
+            ]
+        ),
+        workspace_root=tmp_path,
+    )
+
+    assert result["success"] is True
+    assert target.read_text(encoding="utf-8") == "one\nTWO\nthree\nFOUR\n"
+
+
+def test_apply_patch_moves_and_updates_file(tmp_path: Path) -> None:
+    source = tmp_path / "src.txt"
+    source.write_text("alpha\nbeta\n", encoding="utf-8")
+
+    result = apply_patch(
+        patch="\n".join(
+            [
+                "*** Begin Patch",
+                "*** Update File: src.txt",
+                "*** Move to: moved.txt",
+                "@@",
+                " alpha",
+                "-beta",
+                "+gamma",
+                "*** End Patch",
+            ]
+        ),
+        workspace_root=tmp_path,
+    )
+
+    assert result["success"] is True
+    assert source.exists() is False
+    assert (tmp_path / "moved.txt").read_text(encoding="utf-8") == "alpha\ngamma\n"
+    assert result["changes"][0]["kind"] == "move"
+
+
+def test_apply_patch_deletes_file(tmp_path: Path) -> None:
+    target = tmp_path / "trash.txt"
+    target.write_text("bye\n", encoding="utf-8")
+
+    result = apply_patch(
+        patch="\n".join(
+            [
+                "*** Begin Patch",
+                "*** Delete File: trash.txt",
+                "*** End Patch",
+            ]
+        ),
+        workspace_root=tmp_path,
+    )
+
+    assert result["success"] is True
+    assert target.exists() is False

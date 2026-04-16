@@ -59,5 +59,67 @@ def test_cancel_marks_long_running_task_cancelled(tmp_path: Path) -> None:
 
     task = registry.submit(task="cancel", executor="codex", cwd=tmp_path, timeout=5)
     cancelled = registry.cancel(task["task_id"])
+    result = registry.wait(task["task_id"], timeout=2, poll_interval=0.05)
 
     assert cancelled["cancelled"] is True
+    assert result["status"] == "cancelled"
+    assert result["completed"] is True
+
+
+def test_wait_returns_completed_task_metadata(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path / "state")
+    registry = ExecutorRegistry(
+        store=store,
+        codex_command="python3 -c \"print('done')\"",
+        claude_command="python3 -c \"print('claude')\"",
+    )
+
+    task = registry.submit(task="finish", executor="codex", cwd=tmp_path, timeout=5)
+    result = registry.wait(task["task_id"], timeout=2, poll_interval=0.05)
+
+    assert result["status"] == "succeeded"
+    assert "done" in result["stdout_tail"]
+    assert result["completed"] is True
+
+
+def test_submit_command_runs_shell_task_in_background(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path / "state")
+    registry = ExecutorRegistry(
+        store=store,
+        codex_command="python3 -c \"print('codex')\"",
+        claude_command="python3 -c \"print('claude')\"",
+    )
+
+    task = registry.submit_command(
+        command="python3 -c \"print('shell')\"",
+        cwd=tmp_path,
+        timeout=5,
+    )
+    result = registry.wait(task["task_id"], timeout=2, poll_interval=0.05)
+
+    assert result["executor"] == "shell"
+    assert result["status"] == "succeeded"
+    assert "shell" in result["stdout_tail"]
+    assert result["completed"] is True
+
+
+def test_cancel_marks_background_command_cancelled(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path / "state")
+    registry = ExecutorRegistry(
+        store=store,
+        codex_command="python3 -c \"print('codex')\"",
+        claude_command="python3 -c \"print('claude')\"",
+    )
+
+    task = registry.submit_command(
+        command="python3 -c \"import time; time.sleep(2)\"",
+        cwd=tmp_path,
+        timeout=5,
+    )
+    cancelled = registry.cancel(task["task_id"])
+    result = registry.wait(task["task_id"], timeout=2, poll_interval=0.05)
+
+    assert cancelled["cancelled"] is True
+    assert cancelled["status"] == "cancelled"
+    assert result["status"] == "cancelled"
+    assert result["completed"] is True

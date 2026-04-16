@@ -20,6 +20,18 @@ def test_list_files_returns_direct_children(tmp_path: Path) -> None:
     assert result["truncated"] is False
 
 
+def test_list_files_supports_offset_pagination(tmp_path: Path) -> None:
+    for name in ("a.txt", "b.txt", "c.txt"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+
+    result = list_files(tmp_path, recursive=False, limit=1, offset=1)
+
+    assert result["success"] is True
+    assert [entry["name"] for entry in result["entries"]] == ["b.txt"]
+    assert result["truncated"] is True
+    assert result["next_offset"] == 2
+
+
 def test_read_file_supports_offset_and_limit(tmp_path: Path) -> None:
     target = tmp_path / "notes.txt"
     target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
@@ -50,3 +62,14 @@ def test_replace_in_file_requires_unique_match(tmp_path: Path) -> None:
     assert result["success"] is True
     assert "after" in target.read_text(encoding="utf-8")
     assert result["replacements"] == 1
+
+
+def test_replace_in_file_can_replace_all_matches(tmp_path: Path) -> None:
+    target = tmp_path / "app.py"
+    target.write_text("before\nbefore\n", encoding="utf-8")
+
+    result = replace_in_file(target, old_text="before", new_text="after", replace_all=True)
+
+    assert result["success"] is True
+    assert target.read_text(encoding="utf-8") == "after\nafter\n"
+    assert result["replacements"] == 2

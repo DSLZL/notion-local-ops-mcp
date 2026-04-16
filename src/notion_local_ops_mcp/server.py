@@ -26,7 +26,10 @@ from .files import list_files as list_files_impl
 from .files import read_file as read_file_impl
 from .files import replace_in_file as replace_in_file_impl
 from .files import write_file as write_file_impl
+from .patching import apply_patch as apply_patch_impl
 from .pathing import resolve_cwd, resolve_path
+from .search import glob_files as glob_files_impl
+from .search import grep_files as grep_files_impl
 from .search import search_files as search_files_impl
 from .shell import run_command as run_command_impl
 from .tasks import TaskStore
@@ -61,7 +64,7 @@ registry = ExecutorRegistry(
 mcp = FastMCP(
     APP_NAME,
     instructions=(
-        "Use direct tools first for normal tasks: list/search/read/replace/write/run. "
+        "Use direct tools first for normal tasks: list/glob/grep/read/replace/write/patch/run. "
         "Use delegate_task only when direct tools are insufficient for a complex, long-running, or multi-file task."
     ),
     middleware=[BearerAuthMiddleware()],
@@ -72,14 +75,19 @@ mcp = FastMCP(
     name="list_files",
     description="List files and directories. Use this before reading or editing when you need folder context.",
 )
-def list_files(path: str | None = None, recursive: bool = False, limit: int = 200) -> dict[str, object]:
+def list_files(
+    path: str | None = None,
+    recursive: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict[str, object]:
     target = resolve_path(path or ".", WORKSPACE_ROOT)
-    return list_files_impl(target, recursive=recursive, limit=limit)
+    return list_files_impl(target, recursive=recursive, limit=limit, offset=offset)
 
 
 @mcp.tool(
     name="search_files",
-    description="Search text in files. Use this to locate functions, config, or strings before editing.",
+    description="Simple substring search in files. Prefer grep_files for regex, context lines, or advanced filtering.",
 )
 def search_files(
     query: str,
@@ -89,6 +97,51 @@ def search_files(
 ) -> dict[str, object]:
     target = resolve_path(path or ".", WORKSPACE_ROOT)
     return search_files_impl(target, query=query, glob_pattern=glob, limit=limit)
+
+
+@mcp.tool(
+    name="glob_files",
+    description="Find files or directories by glob pattern. Use this to narrow candidate paths before reading or editing.",
+)
+def glob_files(
+    pattern: str,
+    path: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> dict[str, object]:
+    target = resolve_path(path or ".", WORKSPACE_ROOT)
+    return glob_files_impl(target, pattern=pattern, limit=limit, offset=offset)
+
+
+@mcp.tool(
+    name="grep_files",
+    description="Advanced regex search across files with glob filtering, context lines, and alternate output modes.",
+)
+def grep_files(
+    pattern: str,
+    path: str | None = None,
+    glob: str | None = None,
+    output_mode: str = "content",
+    before: int = 0,
+    after: int = 0,
+    ignore_case: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+    multiline: bool = False,
+) -> dict[str, object]:
+    target = resolve_path(path or ".", WORKSPACE_ROOT)
+    return grep_files_impl(
+        target,
+        pattern=pattern,
+        glob_pattern=glob,
+        output_mode=output_mode,
+        before=before,
+        after=after,
+        ignore_case=ignore_case,
+        head_limit=limit,
+        offset=offset,
+        multiline=multiline,
+    )
 
 
 @mcp.tool(
@@ -102,11 +155,16 @@ def read_file(path: str, offset: int | None = None, limit: int | None = None) ->
 
 @mcp.tool(
     name="replace_in_file",
-    description="Replace one exact text fragment in a file. Prefer this over full rewrites for small edits.",
+    description="Replace an exact text fragment in a file. Can replace one unique match or all matches.",
 )
-def replace_in_file(path: str, old_text: str, new_text: str) -> dict[str, object]:
+def replace_in_file(
+    path: str,
+    old_text: str,
+    new_text: str,
+    replace_all: bool = False,
+) -> dict[str, object]:
     target = resolve_path(path, WORKSPACE_ROOT)
-    return replace_in_file_impl(target, old_text=old_text, new_text=new_text)
+    return replace_in_file_impl(target, old_text=old_text, new_text=new_text, replace_all=replace_all)
 
 
 @mcp.tool(
@@ -119,15 +177,35 @@ def write_file(path: str, content: str) -> dict[str, object]:
 
 
 @mcp.tool(
-    name="run_command",
-    description="Run a local shell command. Use for tests, builds, scripts, git, or other daily tasks.",
+    name="apply_patch",
+    description="Apply a codex-style patch with add, update, move, or delete operations.",
 )
-def run_command(command: str, cwd: str | None = None, timeout: int | None = None) -> dict[str, object]:
+def apply_patch(patch: str) -> dict[str, object]:
+    return apply_patch_impl(patch=patch, workspace_root=WORKSPACE_ROOT)
+
+
+@mcp.tool(
+    name="run_command",
+    description="Run a local shell command now or queue it as a background task for wait_task/get_task polling.",
+)
+def run_command(
+    command: str,
+    cwd: str | None = None,
+    timeout: int | None = None,
+    run_in_background: bool = False,
+) -> dict[str, object]:
     resolved_cwd = resolve_cwd(cwd, WORKSPACE_ROOT)
+    effective_timeout = timeout if timeout is not None else COMMAND_TIMEOUT
+    if run_in_background:
+        return registry.submit_command(
+            command=command,
+            cwd=resolved_cwd,
+            timeout=effective_timeout,
+        )
     return run_command_impl(
         command=command,
         cwd=resolved_cwd,
-        timeout=timeout if timeout is not None else COMMAND_TIMEOUT,
+        timeout=effective_timeout,
     )
 
 
@@ -157,15 +235,23 @@ def delegate_task(
 
 @mcp.tool(
     name="get_task",
-    description="Get the current status and output tail for a delegated task.",
+    description="Get the current status and output tail for a delegated or background shell task.",
 )
 def get_task(task_id: str) -> dict[str, object]:
     return registry.get(task_id)
 
 
 @mcp.tool(
+    name="wait_task",
+    description="Wait for a delegated or background shell task to finish or until timeout, then return its latest status and output tail.",
+)
+def wait_task(task_id: str, timeout: float = 30, poll_interval: float = 0.5) -> dict[str, object]:
+    return registry.wait(task_id, timeout=timeout, poll_interval=poll_interval)
+
+
+@mcp.tool(
     name="cancel_task",
-    description="Cancel a delegated task if it is still running.",
+    description="Cancel a delegated or background shell task if it is still running.",
 )
 def cancel_task(task_id: str) -> dict[str, object]:
     return registry.cancel(task_id)
