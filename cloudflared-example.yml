@@ -1,0 +1,7 @@
+tunnel: <your-tunnel-id>
+credentials-file: /absolute/path/to/<your-tunnel-id>.json
+
+ingress:
+  - hostname: <your-domain>
+    service: http://127.0.0.1:8766
+  - service: http_status:404

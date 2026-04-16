@@ -1,0 +1,52 @@
+from pathlib import Path
+
+from notion_local_ops_mcp.files import list_files, read_file, replace_in_file, write_file
+from notion_local_ops_mcp.pathing import resolve_path
+
+
+def test_resolve_path_uses_workspace_root_for_relative_paths(tmp_path: Path) -> None:
+    resolved = resolve_path("src/app.py", tmp_path)
+    assert resolved == (tmp_path / "src/app.py").resolve()
+
+
+def test_list_files_returns_direct_children(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+
+    result = list_files(tmp_path, recursive=False, limit=20)
+
+    assert result["success"] is True
+    assert {entry["name"] for entry in result["entries"]} == {"a.txt", "nested"}
+    assert result["truncated"] is False
+
+
+def test_read_file_supports_offset_and_limit(tmp_path: Path) -> None:
+    target = tmp_path / "notes.txt"
+    target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    result = read_file(target, offset=2, limit=2, max_lines=50, max_bytes=4096)
+
+    assert result["success"] is True
+    assert result["content"] == "two\nthree"
+    assert result["next_offset"] == 4
+
+
+def test_write_file_creates_parent_directories(tmp_path: Path) -> None:
+    target = tmp_path / "deep" / "file.txt"
+
+    result = write_file(target, content="hello")
+
+    assert result["success"] is True
+    assert target.read_text(encoding="utf-8") == "hello"
+    assert result["bytes_written"] == 5
+
+
+def test_replace_in_file_requires_unique_match(tmp_path: Path) -> None:
+    target = tmp_path / "app.py"
+    target.write_text("print('before')\n", encoding="utf-8")
+
+    result = replace_in_file(target, old_text="before", new_text="after")
+
+    assert result["success"] is True
+    assert "after" in target.read_text(encoding="utf-8")
+    assert result["replacements"] == 1
