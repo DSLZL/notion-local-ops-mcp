@@ -1,35 +1,35 @@
 # notion-local-ops-mcp
 
-[中文说明](./README.zh-CN.md)
+[English](./README.md)
 
-A local MCP server that lets an **MCP Agent** operate on your local files, shell, git, and delegated local coding agents.
+一个本地 MCP 服务器，让 **MCP Agent** 可以直接操作你的本地文件、shell、git，以及委托给本地 coding agent 的任务。
 
-## Core Project vs Optional Notion Demo
+## 核心项目 vs 可选 Notion 示范
 
-`notion-local-ops-mcp` itself is the MCP server.
+`notion-local-ops-mcp` 的核心就是这个 MCP 服务器本身。
 
-The **Notion AI + instruction page + project-management workflow** is only an **optional demo / extension scenario** built on top of this server. It is useful if you want to combine:
+**指令页 + Notion AI + 项目管理** 只是构建在它之上的一个**可选示范 / 扩展示例**。这个示范场景适合你想把下面几层组合起来时使用：
 
-- **Notion AI** for page-level instructions
-- an **MCP Agent** for actual local execution
-- **Projects / Tasks** pages for coordination inside Notion
+- **Notion AI**：负责页面级指令
+- **MCP Agent**：负责真实的本地执行
+- **Projects / Tasks**：负责在 Notion 内做协调
 
-That demo is not required to use this project.
+不用这套示范场景，也完全可以使用本项目。
 
-## Optional Public Notion Instruction-Page Demo
+## 可选的公开 Notion 指令页示例
 
-If you want that optional workflow, this is the canonical public page:
+如果你想用这套可选工作流，统一使用这个公开页面：
 
-📖 **[Public Notion instruction-page demo](https://ncp.notion.site/Agent-Start-Here-Template-10eb4da3979d8396861281ca608bc34e)**
+📖 **[公开 Notion 指令页示例](https://ncp.notion.site/Agent-Start-Here-Template-10eb4da3979d8396861281ca608bc34e)**
 
-Important:
+请注意：
 
-- this same public page is what you duplicate into your own workspace
-- in the demo workflow, its real working role is to become the **page-level instruction page for Notion AI**
-- the page currently includes sample rows from this repo so the structure is visible immediately
-- after duplicating it, replace or delete the sample rows and set your own paths
+- 这一个公开页面同时也是你 duplicate 到自己 workspace 里的来源页
+- 在示范工作流里，它真正的工作角色是 **Notion AI 的页面级指令页**
+- 页面里目前带有本仓库的示例行数据，方便你一眼看懂结构
+- duplicate 之后，应该尽快替换或删除示例行，并改成你自己的路径
 
-## Documentation
+## 文档
 
 ### English
 
@@ -43,35 +43,35 @@ Important:
 - [可选工作流效果展示](./docs/notion-showcase.zh-CN.md)
 - [公开 Notion 指令页示例](https://ncp.notion.site/Agent-Start-Here-Template-10eb4da3979d8396861281ca608bc34e)
 
-## Terminology
+## 术语约定
 
-To avoid confusion, this repo uses these terms consistently:
+为了避免混淆，本文档统一使用以下命名：
 
 1. **Notion AI**
-   The page-level AI behavior inside Notion. In the optional demo, you bind the duplicated public page in `Notion AI > Instructions`.
+   指 Notion 里的页面级 AI 行为层。在可选示范里，你会把 duplicate 出来的公开页绑定到 `Notion AI > 指令`。
 2. **MCP Agent**
-   The agent that actually uses `notion-local-ops-mcp` to read local files, run shell commands, inspect git state, and delegate local coding work.
-3. **Instruction page**
-   The duplicated public Notion page used by Notion AI in the optional demo workflow.
+   指真正通过 `notion-local-ops-mcp` 使用本地文件、shell、git、delegate 能力的 agent。
+3. **指令页**
+   指可选示范里 duplicate 后给 Notion AI 使用的那张页面。
 4. **Projects / Tasks**
-   The runtime coordination pages used only in that optional demo workflow.
+   指只在这个可选示范里使用的运行时协调页面。
 
-## How The Optional Demo Fits Together
+## 可选示范的四层结构
 
-If you use the optional Notion workflow, there are four separate layers:
+如果你使用可选的 Notion 工作流，需要把下面四层分开理解：
 
-1. **Page-level instruction page for Notion AI**
-   Defines routing and coordination rules such as `Task -> Project -> AGENTS.md`, working-directory derivation, and write-back rules.
-2. **Prompt for the MCP Agent**
-   Defines general coding-agent behavior: local-file disambiguation, tool preference, verification style, and execution behavior.
-3. **MCP server**
-   `notion-local-ops-mcp` provides the actual execution layer: local files, shell, git, and delegated tasks.
-4. **Projects / Tasks runtime data**
-   Stores task status, project defaults, verification summaries, and other coordination fields.
+1. **Notion AI 的页面级指令页**
+   负责定义 `Task -> Project -> AGENTS.md` 的读取顺序、工作目录推导方式，以及回写规则。
+2. **MCP Agent 的 prompt**
+   负责定义通用 coding-agent 行为，例如本地文件歧义处理、工具优先级、验证风格和执行习惯。
+3. **MCP 服务器**
+   也就是 `notion-local-ops-mcp` 本身，提供本地文件、shell、git 和委托执行能力。
+4. **Projects / Tasks 运行时数据**
+   保存 task 状态、project 默认值、验证摘要和其他协调字段。
 
-Keep these layers separate. The instruction page is **not** the same thing as the MCP Agent prompt, and the optional Notion workflow is **not** the core of this repository.
+请把这四层分开。**指令页不是 MCP Agent 的 prompt**，而这套可选 Notion 工作流也**不是**本仓库的核心本体。
 
-## What It Provides
+## 提供的能力
 
 - `list_files`
 - `list_skills`
@@ -93,19 +93,19 @@ Keep these layers separate. The instruction page is **not** the same thing as th
 - `wait_task`
 - `cancel_task`
 
-`delegate_task` supports local `codex` and `claude` CLIs with structured task envelopes.
+`delegate_task` 支持本地 `codex` 和 `claude` CLI，并使用结构化任务参数。
 
-## Requirements
+## 运行要求
 
 - Python 3.11+
 - `cloudflared`
-- A Notion workspace where you can configure an **MCP Agent** with custom MCP support
-- Optional: `codex` CLI
-- Optional: `claude` CLI
+- 一个可在 Notion 中配置自定义 MCP 的 **MCP Agent**
+- 可选：`codex` CLI
+- 可选：`claude` CLI
 
-## Quick Start
+## 快速开始
 
-For a fresh clone, the shortest path is:
+全新 clone 后，最短路径是：
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -114,30 +114,30 @@ cd notion-local-ops-mcp
 cp .env.example .env
 ```
 
-Edit `.env` and set at least:
+编辑 `.env`，至少设置：
 
 ```bash
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-Then run:
+然后运行：
 
 ```bash
 ./scripts/dev-tunnel.sh
 ```
 
-What you should expect:
+你应该看到：
 
-- the script creates or reuses `.venv`
-- the script installs missing Python dependencies automatically
-- the script starts the local MCP server on `http://127.0.0.1:8766/mcp`
-- the script prefers `cloudflared.local.yml` for a named tunnel
-- otherwise it falls back to a `cloudflared` quick tunnel and prints a public HTTPS URL
+- 脚本创建或复用 `.venv`
+- 自动安装缺失的 Python 依赖
+- 本地 MCP 服务启动在 `http://127.0.0.1:8766/mcp`
+- 优先使用 `cloudflared.local.yml` 命名 tunnel
+- 否则回退到 `cloudflared` quick tunnel，并打印公网 HTTPS 地址
 
-Use the printed tunnel URL with `/mcp` appended in Notion, and use `NOTION_LOCAL_OPS_AUTH_TOKEN` as the Bearer token.
+在 Notion 里配置时，使用这个输出地址并在后面补上 `/mcp`，同时使用 `NOTION_LOCAL_OPS_AUTH_TOKEN` 作为 Bearer token。
 
-## Manual Install
+## 手动安装
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -149,9 +149,9 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Configure
+## 配置
 
-If you are not using the one-command flow, copy `.env.example` to `.env` and set at least:
+如果你不使用一键启动流程，就先复制 `.env.example` 到 `.env`，至少设置：
 
 ```bash
 cp .env.example .env
@@ -159,7 +159,7 @@ NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-Optional:
+可选项：
 
 ```bash
 NOTION_LOCAL_OPS_CODEX_COMMAND="codex"
@@ -168,45 +168,45 @@ NOTION_LOCAL_OPS_COMMAND_TIMEOUT="30"
 NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 ```
 
-## Manual Start
+## 手动启动
 
 ```bash
 source .venv/bin/activate
 notion-local-ops-mcp
 ```
 
-Local endpoint:
+本地地址：
 
 ```text
 http://127.0.0.1:8766/mcp
 ```
 
-## One-Command Local Dev Tunnel
+## 一键本地开发 Tunnel
 
-Recommended local workflow:
+推荐的本地工作流：
 
 ```bash
 ./scripts/dev-tunnel.sh
 ```
 
-What it does:
+这个脚本会：
 
-- reuses or creates `.venv`
-- installs missing runtime dependencies
-- loads `.env` from the repo root if present
-- starts `notion-local-ops-mcp`
-- prefers `cloudflared.local.yml` or `cloudflared.local.yaml` if present
-- otherwise opens a `cloudflared` quick tunnel to your local server
+- 复用或创建 `.venv`
+- 安装缺失的运行时依赖
+- 如果存在 `.env`，自动从仓库根目录加载
+- 启动 `notion-local-ops-mcp`
+- 如果存在 `cloudflared.local.yml` 或 `cloudflared.local.yaml`，优先使用它
+- 否则自动打开一个 `cloudflared` quick tunnel
 
-Notes:
+注意：
 
-- `.env` is gitignored, so your local token and workspace path stay out of git
-- `cloudflared.local.yml` is gitignored, so your local named tunnel config stays out of git
-- if `NOTION_LOCAL_OPS_WORKSPACE_ROOT` is unset, the script defaults it to the repo root
-- if `NOTION_LOCAL_OPS_AUTH_TOKEN` is unset, the script exits with an error instead of guessing
-- for a fresh clone, you do not need to run `pip install` manually before using this script
+- `.env` 已加入 gitignore，所以本地 token 和 workspace 路径不会进 git
+- `cloudflared.local.yml` 已加入 gitignore，所以你的本地 tunnel 配置也不会进 git
+- 如果 `NOTION_LOCAL_OPS_WORKSPACE_ROOT` 未设置，脚本会默认使用仓库根目录
+- 如果 `NOTION_LOCAL_OPS_AUTH_TOKEN` 未设置，脚本会直接报错退出，而不是猜测
+- 全新 clone 后，通常不需要先手动执行 `pip install`
 
-## Expose With cloudflared
+## 用 cloudflared 暴露服务
 
 ### Quick tunnel
 
@@ -214,37 +214,37 @@ Notes:
 cloudflared tunnel --url http://127.0.0.1:8766
 ```
 
-Use the generated HTTPS URL with `/mcp`.
+使用生成的 HTTPS 地址，并在后面补 `/mcp`。
 
 ### Named tunnel
 
-Copy [`cloudflared-example.yml`](./cloudflared-example.yml) to `cloudflared.local.yml`, fill in your real values, then run:
+把 [`cloudflared-example.yml`](./cloudflared-example.yml) 复制成 `cloudflared.local.yml`，填入你的真实值，然后运行：
 
 ```bash
 cp cloudflared-example.yml cloudflared.local.yml
 ./scripts/dev-tunnel.sh
 ```
 
-Or run cloudflared manually:
+或者手动运行 cloudflared：
 
 ```bash
 cloudflared tunnel --config ./cloudflared-example.yml run <your-tunnel-name>
 ```
 
-## Add To Your MCP Agent In Notion
+## 在 Notion 中配置你的 MCP Agent
 
-If you want the shortest user-facing walkthrough instead of raw setup notes, see:
+如果你想看更面向使用者的配置流程，而不是原始技术步骤，可以直接看：
 
-- [Notion setup guide](./docs/notion-setup.md)
-- [Optional workflow showcase](./docs/notion-showcase.md)
+- [Notion 配置指南](./docs/notion-setup.zh-CN.md)
+- [可选工作流效果展示](./docs/notion-showcase.zh-CN.md)
 
-Use:
+配置时使用：
 
-- URL: `https://<your-domain-or-tunnel>/mcp`
-- Auth type: `Bearer`
-- Token: your `NOTION_LOCAL_OPS_AUTH_TOKEN`
+- URL：`https://<your-domain-or-tunnel>/mcp`
+- Auth type：`Bearer`
+- Token：你的 `NOTION_LOCAL_OPS_AUTH_TOKEN`
 
-Recommended prompt for the MCP Agent:
+推荐给 MCP Agent 的简版 prompt：
 
 ```text
 Act like a coding agent, not a Notion page editor.
@@ -263,7 +263,7 @@ Use delegate_task only when direct tools are insufficient for complex multi-file
 After each logically meaningful change, create a small focused git commit so progress stays traceable. Keep unrelated changes out of the same commit.
 ```
 
-Recommended full prompt for the MCP Agent:
+推荐给 MCP Agent 的完整版 prompt：
 
 ```text
 You are a pragmatic local operations agent connected to my computer through MCP.
@@ -331,45 +331,45 @@ Output style:
 - At the end, summarize result, verification, and any remaining risk or next step.
 ```
 
-## Environment Variables
+## 环境变量
 
-| Variable | Required | Default |
+| 变量 | 必填 | 默认值 |
 | --- | --- | --- |
-| `NOTION_LOCAL_OPS_HOST` | no | `127.0.0.1` |
-| `NOTION_LOCAL_OPS_PORT` | no | `8766` |
-| `NOTION_LOCAL_OPS_WORKSPACE_ROOT` | yes | home directory |
-| `NOTION_LOCAL_OPS_STATE_DIR` | no | `~/.notion-local-ops-mcp` |
-| `NOTION_LOCAL_OPS_AUTH_TOKEN` | no | empty |
-| `NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG` | no | empty |
-| `NOTION_LOCAL_OPS_TUNNEL_NAME` | no | empty |
-| `NOTION_LOCAL_OPS_CODEX_COMMAND` | no | `codex` |
-| `NOTION_LOCAL_OPS_CLAUDE_COMMAND` | no | `claude` |
-| `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | no | `30` |
-| `NOTION_LOCAL_OPS_DELEGATE_TIMEOUT` | no | `1800` |
+| `NOTION_LOCAL_OPS_HOST` | 否 | `127.0.0.1` |
+| `NOTION_LOCAL_OPS_PORT` | 否 | `8766` |
+| `NOTION_LOCAL_OPS_WORKSPACE_ROOT` | 是 | home directory |
+| `NOTION_LOCAL_OPS_STATE_DIR` | 否 | `~/.notion-local-ops-mcp` |
+| `NOTION_LOCAL_OPS_AUTH_TOKEN` | 否 | empty |
+| `NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG` | 否 | empty |
+| `NOTION_LOCAL_OPS_TUNNEL_NAME` | 否 | empty |
+| `NOTION_LOCAL_OPS_CODEX_COMMAND` | 否 | `codex` |
+| `NOTION_LOCAL_OPS_CLAUDE_COMMAND` | 否 | `claude` |
+| `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | 否 | `30` |
+| `NOTION_LOCAL_OPS_DELEGATE_TIMEOUT` | 否 | `1800` |
 
-## Tool Notes
+## 工具说明
 
-- `list_files`: list files and directories, with `limit` and `offset` pagination
-- `list_skills`: discover project and global skills with name and description summaries
-- `glob_files`: find files or directories by glob pattern
-- `grep_files`: advanced regex search with glob filtering and output modes
-- `search_files`: simple substring search for backward compatibility
-- `read_file`: read text files with offset and limit
-- `read_files`: read a batch of text files with shared offset and limit
-- `replace_in_file`: replace one exact text fragment or all exact matches
-- `write_file`: write full file content
-- `apply_patch`: apply codex-style add/update/move/delete patches, with `dry_run`, `validate_only`, and optional diff output
-- `git_status`: structured repository status
-- `git_diff`: structured diff output with changed file paths
-- `git_commit`: stage selected paths or all changes and create a commit
-- `git_log`: recent commit history
-- `run_command`: run local shell commands, optionally in background
-- `delegate_task`: send a task to local `codex` or `claude`, with optional `goal`, `acceptance_criteria`, `verification_commands`, and `commit_mode`
-- `get_task`: read task status and output tail
-- `wait_task`: block until a delegated or background shell task completes or times out
-- `cancel_task`: stop a delegated or background shell task
+- `list_files`：列出文件和目录，支持 `limit` / `offset` 分页
+- `list_skills`：发现项目级和全局 skills，并返回名称与简介
+- `glob_files`：按 glob 模式查找文件或目录
+- `grep_files`：支持 glob 过滤和多种输出模式的高级正则搜索
+- `search_files`：为兼容性保留的简单子串搜索
+- `read_file`：按 offset / limit 读取文本文件
+- `read_files`：批量读取多个文本文件
+- `replace_in_file`：替换一个精确片段，或替换全部精确匹配
+- `write_file`：整文件写入
+- `apply_patch`：应用 codex 风格的 add / update / move / delete patch，支持 `dry_run`、`validate_only` 和可选 diff 输出
+- `git_status`：结构化仓库状态
+- `git_diff`：结构化 diff 输出和改动文件列表
+- `git_commit`：stage 指定路径或全部改动后创建 commit
+- `git_log`：最近提交历史
+- `run_command`：运行本地 shell 命令，支持后台模式
+- `delegate_task`：把任务交给本地 `codex` 或 `claude`，支持 `goal`、`acceptance_criteria`、`verification_commands`、`commit_mode`
+- `get_task`：读取后台任务状态和输出尾部
+- `wait_task`：阻塞等待后台 shell 任务或委托任务完成或超时
+- `cancel_task`：停止后台 shell 任务或委托任务
 
-## Verify
+## 验证
 
 ```bash
 source .venv/bin/activate
@@ -377,22 +377,22 @@ pytest -q
 python -m compileall src tests
 ```
 
-## Troubleshooting
+## 故障排查
 
-### Notion says it cannot connect
+### Notion 提示无法连接
 
-- Check the URL ends with `/mcp`
-- Check the auth type is `Bearer`
-- Check the token matches `NOTION_LOCAL_OPS_AUTH_TOKEN`
-- Check `cloudflared` is still running
+- 确认 URL 以 `/mcp` 结尾
+- 确认鉴权类型是 `Bearer`
+- 确认 token 与 `NOTION_LOCAL_OPS_AUTH_TOKEN` 一致
+- 确认 `cloudflared` 仍在运行
 
-### SSE path works locally but not over tunnel
+### 本地 SSE 正常，但通过 tunnel 不通
 
-- Retry with a named tunnel instead of a quick tunnel
-- Confirm `GET /mcp` returns `text/event-stream`
+- 优先改用 named tunnel 再试
+- 确认 `GET /mcp` 返回 `text/event-stream`
 
-### `delegate_task` fails
+### `delegate_task` 失败
 
-- Check `codex --help`
-- Check `claude --help`
-- Set `NOTION_LOCAL_OPS_CODEX_COMMAND` or `NOTION_LOCAL_OPS_CLAUDE_COMMAND` if needed
+- 检查 `codex --help`
+- 检查 `claude --help`
+- 必要时设置 `NOTION_LOCAL_OPS_CODEX_COMMAND` 或 `NOTION_LOCAL_OPS_CLAUDE_COMMAND`
