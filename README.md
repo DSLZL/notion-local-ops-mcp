@@ -172,9 +172,9 @@ If you also want the **Notion AI instruction page + project-management** workflo
 - Optional: `codex` CLI
 - Optional: `claude` CLI
 
-## Quick Start
+## Detailed Setup
 
-For a fresh clone, the shortest path is:
+If you prefer the full step-by-step setup, follow this path:
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -206,7 +206,7 @@ What you should expect:
 
 Use the printed tunnel URL with `/mcp` appended in Notion, and use `NOTION_LOCAL_OPS_AUTH_TOKEN` as the Bearer token.
 
-## Manual Install
+### Manual Install
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -218,7 +218,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Configure
+### Configure
 
 If you are not using the one-command flow, copy `.env.example` to `.env` and set at least:
 
@@ -237,7 +237,7 @@ NOTION_LOCAL_OPS_COMMAND_TIMEOUT="30"
 NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 ```
 
-## Manual Start
+### Manual Start
 
 ```bash
 source .venv/bin/activate
@@ -250,7 +250,7 @@ Local endpoint:
 http://127.0.0.1:8766/mcp
 ```
 
-## One-Command Local Dev Tunnel
+### One-Command Local Dev Tunnel
 
 Recommended local workflow:
 
@@ -275,9 +275,9 @@ Notes:
 - if `NOTION_LOCAL_OPS_AUTH_TOKEN` is unset, the script exits with an error instead of guessing
 - for a fresh clone, you do not need to run `pip install` manually before using this script
 
-## Expose With cloudflared
+### Expose With cloudflared
 
-### Quick tunnel
+#### Quick tunnel
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8766
@@ -285,7 +285,7 @@ cloudflared tunnel --url http://127.0.0.1:8766
 
 Use the generated HTTPS URL with `/mcp`.
 
-### Named tunnel
+#### Named tunnel
 
 Copy [`cloudflared-example.yml`](./cloudflared-example.yml) to `cloudflared.local.yml`, fill in your real values, then run:
 

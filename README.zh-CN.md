@@ -172,9 +172,9 @@ Output style:
 - 可选：`codex` CLI
 - 可选：`claude` CLI
 
-## 快速开始
+## 详细配置
 
-全新 clone 后，最短路径是：
+如果你想按完整步骤配置，可以走这条路径：
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -206,7 +206,7 @@ NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 
 在 Notion 里配置时，使用这个输出地址并在后面补上 `/mcp`，同时使用 `NOTION_LOCAL_OPS_AUTH_TOKEN` 作为 Bearer token。
 
-## 手动安装
+### 手动安装
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
@@ -218,7 +218,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## 配置
+### 配置
 
 如果你不使用一键启动流程，就先复制 `.env.example` 到 `.env`，至少设置：
 
@@ -237,7 +237,7 @@ NOTION_LOCAL_OPS_COMMAND_TIMEOUT="30"
 NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 ```
 
-## 手动启动
+### 手动启动
 
 ```bash
 source .venv/bin/activate
@@ -250,7 +250,7 @@ notion-local-ops-mcp
 http://127.0.0.1:8766/mcp
 ```
 
-## 一键本地开发 Tunnel
+### 一键本地开发 Tunnel
 
 推荐的本地工作流：
 
@@ -275,9 +275,9 @@ http://127.0.0.1:8766/mcp
 - 如果 `NOTION_LOCAL_OPS_AUTH_TOKEN` 未设置，脚本会直接报错退出，而不是猜测
 - 全新 clone 后，通常不需要先手动执行 `pip install`
 
-## 用 cloudflared 暴露服务
+### 用 cloudflared 暴露服务
 
-### Quick tunnel
+#### Quick tunnel
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8766
@@ -285,7 +285,7 @@ cloudflared tunnel --url http://127.0.0.1:8766
 
 使用生成的 HTTPS 地址，并在后面补 `/mcp`。
 
-### Named tunnel
+#### Named tunnel
 
 把 [`cloudflared-example.yml`](./cloudflared-example.yml) 复制成 `cloudflared.local.yml`，填入你的真实值，然后运行：
 
