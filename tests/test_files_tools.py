@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 from notion_local_ops_mcp.files import list_files, read_file, read_files, replace_in_file, write_file
@@ -20,6 +21,18 @@ def test_list_files_returns_direct_children(tmp_path: Path) -> None:
     assert result["truncated"] is False
 
 
+def test_list_files_entries_include_size_and_mtime(tmp_path: Path) -> None:
+    target = tmp_path / "data.txt"
+    target.write_text("hello", encoding="utf-8")
+
+    result = list_files(tmp_path, recursive=False, limit=20)
+
+    entry = next(e for e in result["entries"] if e["name"] == "data.txt")
+    assert entry["size"] == 5
+    assert entry["is_dir"] is False
+    assert entry["mtime"] is not None
+
+
 def test_list_files_supports_offset_pagination(tmp_path: Path) -> None:
     for name in ("a.txt", "b.txt", "c.txt"):
         (tmp_path / name).write_text(name, encoding="utf-8")
@@ -30,6 +43,69 @@ def test_list_files_supports_offset_pagination(tmp_path: Path) -> None:
     assert [entry["name"] for entry in result["entries"]] == ["b.txt"]
     assert result["truncated"] is True
     assert result["next_offset"] == 2
+
+
+def test_list_files_hides_hidden_entries_by_default(tmp_path: Path) -> None:
+    (tmp_path / ".hidden").write_text("x", encoding="utf-8")
+    (tmp_path / "visible.txt").write_text("y", encoding="utf-8")
+
+    default = list_files(tmp_path, recursive=False, limit=20)
+    assert {e["name"] for e in default["entries"]} == {"visible.txt"}
+
+    including = list_files(tmp_path, recursive=False, limit=20, include_hidden=True)
+    assert {e["name"] for e in including["entries"]} == {".hidden", "visible.txt"}
+
+
+def test_list_files_prunes_default_junk_dirs_when_recursive(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print()", encoding="utf-8")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "junk.js").write_text("x", encoding="utf-8")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "x.pyc").write_text("x", encoding="utf-8")
+
+    result = list_files(tmp_path, recursive=True, limit=200)
+
+    names = {Path(e["path"]).name for e in result["entries"]}
+    assert "app.py" in names
+    assert "node_modules" not in names
+    assert "__pycache__" not in names
+    assert "junk.js" not in names
+
+
+def test_list_files_respects_gitignore_when_inside_git_repo(tmp_path: Path) -> None:
+    # Initialize a tiny git repo with a .gitignore that excludes build/.
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "a@b.c"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("secrets.txt\n", encoding="utf-8")
+    (tmp_path / "tracked.py").write_text("print()", encoding="utf-8")
+    (tmp_path / "secrets.txt").write_text("PASSWORD=1", encoding="utf-8")
+
+    result = list_files(tmp_path, recursive=True, limit=200)
+
+    names = {Path(e["path"]).name for e in result["entries"]}
+    assert "tracked.py" in names
+    assert "secrets.txt" not in names
+    assert result["filters"]["gitignore_applied"] is True
+
+    # Disabling respect_gitignore should surface the ignored file.
+    disabled = list_files(tmp_path, recursive=True, limit=200, respect_gitignore=False)
+    names_disabled = {Path(e["path"]).name for e in disabled["entries"]}
+    assert "secrets.txt" in names_disabled
+    assert disabled["filters"]["gitignore_applied"] is False
+
+
+def test_list_files_accepts_custom_exclude_patterns(tmp_path: Path) -> None:
+    (tmp_path / "keep.py").write_text("x", encoding="utf-8")
+    (tmp_path / "skip.log").write_text("y", encoding="utf-8")
+
+    result = list_files(
+        tmp_path, recursive=False, limit=20, exclude_patterns=["*.log"]
+    )
+
+    names = {e["name"] for e in result["entries"]}
+    assert names == {"keep.py"}
 
 
 def test_read_file_supports_offset_and_limit(tmp_path: Path) -> None:

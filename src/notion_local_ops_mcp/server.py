@@ -107,16 +107,33 @@ def list_skills(
 
 @mcp.tool(
     name="list_files",
-    description="List files and directories. Use this before reading or editing when you need folder context.",
+    description=(
+        "List files and directories. Hidden entries, common junk dirs "
+        "(.git / .venv / node_modules / __pycache__ / ...) and .gitignore'd "
+        "paths are excluded by default. Set include_hidden=True or "
+        "respect_gitignore=False to see them; add exclude_patterns for "
+        "fnmatch-style patterns (matched against both name and relative path)."
+    ),
 )
 def list_files(
     path: str | None = None,
     recursive: bool = False,
     limit: int = 200,
     offset: int = 0,
+    include_hidden: bool = False,
+    respect_gitignore: bool = True,
+    exclude_patterns: list[str] | None = None,
 ) -> dict[str, object]:
     target = resolve_path(path or ".", WORKSPACE_ROOT)
-    return list_files_impl(target, recursive=recursive, limit=limit, offset=offset)
+    return list_files_impl(
+        target,
+        recursive=recursive,
+        limit=limit,
+        offset=offset,
+        include_hidden=include_hidden,
+        respect_gitignore=respect_gitignore,
+        exclude_patterns=exclude_patterns,
+    )
 
 
 @mcp.tool(
