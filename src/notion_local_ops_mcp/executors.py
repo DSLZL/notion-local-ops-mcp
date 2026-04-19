@@ -105,6 +105,21 @@ class ExecutorRegistry:
         self._lock = threading.Lock()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._cancel_events: dict[str, threading.Event] = {}
+        self._completion_events: dict[str, threading.Event] = {}
+
+    def _register_task(self, task_id: str) -> tuple[threading.Event, threading.Event]:
+        cancel_event = threading.Event()
+        completion_event = threading.Event()
+        with self._lock:
+            self._cancel_events[task_id] = cancel_event
+            self._completion_events[task_id] = completion_event
+        return cancel_event, completion_event
+
+    def _mark_completed(self, task_id: str) -> None:
+        with self._lock:
+            event = self._completion_events.get(task_id)
+        if event is not None:
+            event.set()
 
     def submit(
         self,
@@ -185,9 +200,7 @@ class ExecutorRegistry:
             timeout=timeout,
             context_files=[],
         )
-        cancel_event = threading.Event()
-        with self._lock:
-            self._cancel_events[created["task_id"]] = cancel_event
+        cancel_event, _ = self._register_task(created["task_id"])
         thread = threading.Thread(
             target=self._run_command_task,
             args=(created["task_id"], command, cwd, timeout, cancel_event),
@@ -210,8 +223,35 @@ class ExecutorRegistry:
         return meta
 
     def wait(self, task_id: str, timeout: float, poll_interval: float = 0.5) -> dict[str, object]:
-        deadline = time.monotonic() + max(timeout, 0)
-        interval = max(poll_interval, 0.05)
+        """Block until the task reaches a terminal status or ``timeout`` elapses.
+
+        Event-driven when the task was submitted through this registry instance
+        (uses :class:`threading.Event` so there is no wakeup latency). For tasks
+        loaded from disk after a server restart the completion event is not
+        registered, so we fall back to polling ``meta['completed']`` at
+        ``poll_interval`` seconds until the deadline.
+        """
+        # Fast path: already finished.
+        meta = self.get(task_id)
+        if meta["completed"]:
+            meta["timed_out"] = False
+            return meta
+
+        with self._lock:
+            completion_event = self._completion_events.get(task_id)
+
+        remaining = max(float(timeout), 0.0)
+        if completion_event is not None:
+            # Event-driven wait: returns as soon as the worker thread marks
+            # completion, or after ``remaining`` seconds, whichever comes first.
+            completion_event.wait(timeout=remaining)
+            meta = self.get(task_id)
+            meta["timed_out"] = not meta["completed"]
+            return meta
+
+        # Fallback: no registered event (task persisted from a previous run).
+        deadline = time.monotonic() + remaining
+        interval = max(float(poll_interval), 0.05)
         while True:
             meta = self.get(task_id)
             if meta["completed"]:
@@ -231,6 +271,7 @@ class ExecutorRegistry:
         if process is not None and process.poll() is None:
             process.kill()
         updated = self.store.update(task_id, status="cancelled")
+        self._mark_completed(task_id)
         return {
             "task_id": task_id,
             "status": updated["status"],
@@ -253,6 +294,39 @@ class ExecutorRegistry:
         raise RuntimeError("No delegate executor command is available.")
 
     def _run_task(
+        self,
+        task_id: str,
+        executor_name: str,
+        command: str,
+        task: str | None,
+        goal: str | None,
+        cwd: Path,
+        timeout: int,
+        cancel_event: threading.Event,
+        context_files: list[str],
+        acceptance_criteria: list[str],
+        verification_commands: list[str],
+        commit_mode: str,
+    ) -> None:
+        try:
+            self._run_task_impl(
+                task_id,
+                executor_name,
+                command,
+                task,
+                goal,
+                cwd,
+                timeout,
+                cancel_event,
+                context_files,
+                acceptance_criteria,
+                verification_commands,
+                commit_mode,
+            )
+        finally:
+            self._mark_completed(task_id)
+
+    def _run_task_impl(
         self,
         task_id: str,
         executor_name: str,
@@ -325,6 +399,19 @@ class ExecutorRegistry:
         self.store.update(task_id, status=status, exit_code=process.returncode)
 
     def _run_command_task(
+        self,
+        task_id: str,
+        command: str,
+        cwd: Path,
+        timeout: int,
+        cancel_event: threading.Event,
+    ) -> None:
+        try:
+            self._run_command_task_impl(task_id, command, cwd, timeout, cancel_event)
+        finally:
+            self._mark_completed(task_id)
+
+    def _run_command_task_impl(
         self,
         task_id: str,
         command: str,
