@@ -284,7 +284,12 @@ def apply_patch(
     ),
 )
 async def server_info() -> dict[str, object]:
-    registered = await mcp._list_tools()
+    list_tools = getattr(mcp, "_list_tools")
+    try:
+        registered = await list_tools()
+    except TypeError:
+        # fastmcp 2.14 requires a context arg; None works for server-side listing.
+        registered = await list_tools(None)
     tools = sorted(tool.name for tool in registered)
     session_cwd = session.get_default_cwd()
     return {
