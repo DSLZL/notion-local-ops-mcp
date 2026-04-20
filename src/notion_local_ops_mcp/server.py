@@ -23,7 +23,6 @@ from .executors import ExecutorRegistry
 from .files import list_files as list_files_impl
 from .files import read_file as read_file_impl
 from .files import read_files as read_files_impl
-from .files import replace_in_file as replace_in_file_impl
 from .files import write_file as write_file_impl
 from .gitops import git_blame as git_blame_impl
 from .gitops import git_commit as git_commit_impl
@@ -248,30 +247,6 @@ def read_text(
     if isinstance(result, dict):
         result["mode"] = "batch"
     return result
-
-
-@mcp.tool(
-    name="replace_in_file",
-    description=(
-        "Replace an exact text fragment in a file. Supports one unique match or "
-        "replace_all, plus dry_run preview without writing."
-    ),
-)
-def replace_in_file(
-    path: str,
-    old_text: str,
-    new_text: str,
-    replace_all: bool = False,
-    dry_run: bool = False,
-) -> dict[str, object]:
-    target = resolve_path(path, WORKSPACE_ROOT)
-    return replace_in_file_impl(
-        target,
-        old_text=old_text,
-        new_text=new_text,
-        replace_all=replace_all,
-        dry_run=dry_run,
-    )
 
 
 @mcp.tool(

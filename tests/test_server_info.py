@@ -27,7 +27,6 @@ def test_server_info_reports_metadata_and_tools() -> None:
         "search",
         "read_text",
         "run_command",
-        "replace_in_file",
         "apply_patch",
         "git_status",
         "git_show",
@@ -37,6 +36,6 @@ def test_server_info_reports_metadata_and_tools() -> None:
         "purge_tasks",
     ]:
         assert name in tools, f"expected {name} in tools list"
-    for removed in ["search_files", "glob_files", "grep_files", "read_file", "read_files"]:
+    for removed in ["search_files", "glob_files", "grep_files", "read_file", "read_files", "replace_in_file"]:
         assert removed not in tools, f"did not expect legacy alias tool {removed}"
     assert payload["tool_count"] == len(tools)
