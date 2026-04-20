@@ -22,8 +22,8 @@ src/notion_local_ops_mcp/
 ├── server.py      # FastMCP app, tool registration, uvicorn entrypoint
 ├── config.py      # All env-var driven settings (host, port, paths, timeouts…)
 ├── pathing.py     # Path resolution: relative → absolute under WORKSPACE_ROOT
-├── files.py       # list_files, read_text/read_file(s), write_file, replace_in_file
-├── search.py      # search/search_files/glob_files/grep_files implementations
+├── files.py       # list_files, read_text, write_file, replace_in_file
+├── search.py      # search implementations (glob/regex/text)
 ├── shell.py       # run_command — subprocess with timeout
 ├── tasks.py       # TaskStore — persistent task metadata & logs on disk
 └── executors.py   # ExecutorRegistry — async delegate_task via codex / claude-code
@@ -37,9 +37,7 @@ src/notion_local_ops_mcp/
 | `set_default_cwd` / `get_default_cwd` | Manage session default working directory |
 | `list_files` | List directory contents (flat or recursive) |
 | `search` | Canonical unified query tool (glob/regex/text) |
-| `glob_files` / `grep_files` / `search_files` | Legacy compatibility aliases for `search` |
 | `read_text` | Canonical single/batch text reader with line pagination |
-| `read_file` / `read_files` | Legacy compatibility aliases for `read_text` |
 | `write_file` | Create or overwrite a file (`dry_run` supported) |
 | `replace_in_file` | Replace unique/all exact text fragments (`dry_run` supported) |
 | `apply_patch` | Apply codex-style patch with validation/dry-run support |
@@ -56,7 +54,7 @@ src/notion_local_ops_mcp/
 - **WORKSPACE_ROOT** — Relative-path anchor and default cwd only (not a sandbox boundary). Set via `NOTION_LOCAL_OPS_WORKSPACE_ROOT`; defaults to `$HOME`.
 - **Bearer auth** — Optional `NOTION_LOCAL_OPS_AUTH_TOKEN`; if set, every request must include a matching `Authorization: Bearer <token>` header.
 - **Delegate executors** — `delegate_task` spawns a background thread running either OpenAI Codex CLI or Claude Code CLI. The executor is chosen automatically (`auto`) or explicitly (`codex` / `claude-code`). Task state is persisted under `STATE_DIR/tasks/<id>/`.
-- **Safety** — `replace_in_file` enforces single-match uniqueness. `read_file` caps output at 200 lines / 32 KB. Binary files are rejected.
+- **Safety** — `replace_in_file` enforces single-match uniqueness. `read_text` caps output at 200 lines / 32 KB. Binary files are rejected.
 
 ## Configuration (env vars)
 
