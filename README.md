@@ -12,31 +12,92 @@ Turn a Notion **MCP Agent** into a local coding agent for local files, shell, gi
 - lets an MCP Agent work on a real local repo instead of only editing Notion pages
 - supports delegated long-running tasks through local `codex` or `claude`
 
-## Quick Start
+## Prerequisites
+
+Install these once before you start. On Windows, run every command shown in this README inside **Git Bash** or **WSL** so the `.sh` scripts work.
+
+| Tool | Why you need it | Check it is installed |
+| --- | --- | --- |
+| Python 3.11+ | runs the MCP server | `python --version` |
+| Git | clones this repository | `git --version` |
+| `cloudflared` | exposes your local server to Notion over HTTPS | `cloudflared --version` |
+
+Optional (only if you want `delegate_task` to hand work off to another CLI agent):
+
+- `codex` CLI — https://github.com/openai/codex
+- `claude` CLI — https://docs.anthropic.com/claude/docs/claude-cli
+
+You also need a Notion workspace where you can configure an **MCP Agent** with custom MCP support.
+
+## Quick Start (5 steps)
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
 cd notion-local-ops-mcp
-cp .env.example .env
-./scripts/dev-tunnel.sh
 ```
 
-Set at least:
+### 2. Create your `.env` file
+
+`.env` holds your local secrets. It is gitignored, so nothing you put there is committed.
 
 ```bash
+cp .env.example .env
+```
+
+Open `.env` in your editor and fill in at least these two values:
+
+```bash
+# Absolute path to the folder the MCP agent is allowed to read and write.
+#   macOS / Linux example:      /Users/you/Code/my-project
+#   Windows Git Bash example:   /c/Users/you/Code/my-project
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
+
+# A long random string. Treat it like a password — you will paste the same value into Notion.
+# Tip: generate one with `openssl rand -hex 32`.
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-## Important MCP Agent Configuration
+### 3. Start the local server + public tunnel (one command)
 
-Use this in your MCP Agent configuration inside Notion:
+```bash
+./scripts/dev-tunnel.sh
+```
 
-- URL: `https://<your-domain-or-tunnel>/mcp`
-- Auth type: `Bearer`
-- Token: `NOTION_LOCAL_OPS_AUTH_TOKEN`
+The first run will:
 
-Use the prompt below for the **MCP Agent**. It is not for the Notion AI instruction page.
+- create a virtualenv at `.venv/` and install Python dependencies automatically
+- start the MCP server on `http://127.0.0.1:8766/mcp`
+- open a `cloudflared` quick tunnel and print a public HTTPS URL similar to:
+
+```text
+https://random-words-1234.trycloudflare.com
+```
+
+**Keep this terminal open.** That printed URL is how Notion reaches your computer; if you close the terminal the connection drops.
+
+### 4. Add the server to a Notion MCP Agent
+
+In Notion, open (or create) an MCP Agent and add a custom MCP server with these exact values:
+
+| Field | Value |
+| --- | --- |
+| URL | the tunnel URL from step 3 with `/mcp` appended, e.g. `https://random-words-1234.trycloudflare.com/mcp` |
+| Auth type | `Bearer` |
+| Token | the exact value of `NOTION_LOCAL_OPS_AUTH_TOKEN` from your `.env` |
+
+Save. Notion should load the tool list within a few seconds.
+
+### 5. Paste the MCP Agent prompt
+
+Copy the prompt in the next section into the MCP Agent's **prompt** field (not the Notion AI instruction page). It teaches the agent how to use the local tools.
+
+If anything fails, jump to [Troubleshooting](#troubleshooting).
+
+## MCP Agent Prompt
+
+Paste the prompt below into your MCP Agent's prompt field.
 
 <details>
 <summary><strong>Recommended MCP Agent prompt</strong></summary>
@@ -117,71 +178,28 @@ If you also want the **Notion AI instruction page + project-management** workflo
 - [Optional use case: Notion AI instruction page + project management](./docs/notion-use-case.md)
 - [可选应用场景：Notion AI 页面级指令 + 项目管理](./docs/notion-use-case.zh-CN.md)
 
-## Requirements
+## Manual Install (alternative to `dev-tunnel.sh`)
 
-- Python 3.11+
-- `cloudflared`
-- A Notion workspace where you can configure an **MCP Agent** with custom MCP support
-- Optional: `codex` CLI
-- Optional: `claude` CLI
+Use this path only if you want to run each piece yourself. If `./scripts/dev-tunnel.sh` from [Quick Start](#quick-start-5-steps) works for you, skip this section.
 
-## Detailed Setup
-
-If you prefer the full step-by-step setup, follow this path:
+### 1. Create a virtualenv and install the package
 
 ```bash
-git clone https://github.com/<your-account>/notion-local-ops-mcp.git
-cd notion-local-ops-mcp
-
-cp .env.example .env
-```
-
-Edit `.env` and set at least:
-
-```bash
-NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
-NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
-```
-
-Then run:
-
-```bash
-./scripts/dev-tunnel.sh
-```
-
-What you should expect:
-
-- the script creates or reuses `.venv`
-- the script installs missing Python dependencies automatically
-- the script starts the local MCP server on `http://127.0.0.1:8766/mcp` through a rolling-reload supervisor
-- the script prints a `./scripts/dev-tunnel.sh reload` command so you can restart the local server without dropping the tunnel
-- the script prefers `cloudflared.local.yml` for a named tunnel
-- otherwise it falls back to a `cloudflared` quick tunnel and prints a public HTTPS URL
-
-Use the printed tunnel URL with `/mcp` appended in Notion, and use `NOTION_LOCAL_OPS_AUTH_TOKEN` as the Bearer token.
-
-### Manual Install
-
-```bash
-git clone https://github.com/<your-account>/notion-local-ops-mcp.git
-cd notion-local-ops-mcp
-
 python3.11 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate         # Windows Git Bash: source .venv/Scripts/activate
 pip install -e ".[dev]"
 ```
 
-### Configure
+### 2. Create and edit `.env`
 
-If you are not using the one-command flow, copy `.env.example` to `.env` and set at least:
+Same as step 2 of [Quick Start](#quick-start-5-steps). The required keys are:
 
 ```bash
-cp .env.example .env
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-Optional:
+Optional keys (full list in [Environment Variables](#environment-variables)):
 
 ```bash
 NOTION_LOCAL_OPS_CODEX_COMMAND="codex"
@@ -191,7 +209,7 @@ NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS="30"
 ```
 
-### Manual Start
+### 3. Start the MCP server in the foreground
 
 ```bash
 source .venv/bin/activate
@@ -204,34 +222,20 @@ Local endpoint:
 http://127.0.0.1:8766/mcp
 ```
 
-### One-Command Local Dev Tunnel
+## How `./scripts/dev-tunnel.sh` behaves
 
-Recommended local workflow:
+Good to know when you use the one-command script from [Quick Start](#quick-start-5-steps):
 
-```bash
-./scripts/dev-tunnel.sh
-```
-
-What it does:
-
-- reuses or creates `.venv`
-- installs missing runtime dependencies
-- loads `.env` from the repo root if present
-- starts `notion-local-ops-mcp` behind a rolling-reload supervisor
-- keeps the public tunnel stable while `./scripts/dev-tunnel.sh reload` swaps in a fresh server process
-- prefers `cloudflared.local.yml` or `cloudflared.local.yaml` if present
-- otherwise opens a `cloudflared` quick tunnel to your local server
-
-Notes:
-
-- `.env` is gitignored, so your local token and workspace path stay out of git
-- `cloudflared.local.yml` is gitignored, so your local named tunnel config stays out of git
+- it reuses or creates `.venv` and installs missing runtime dependencies
+- it loads `.env` from the repo root if present
+- it starts `notion-local-ops-mcp` behind a rolling-reload supervisor
 - if `NOTION_LOCAL_OPS_WORKSPACE_ROOT` is unset, the script defaults it to the repo root
 - if `NOTION_LOCAL_OPS_AUTH_TOKEN` is unset, the script exits with an error instead of guessing
-- `./scripts/dev-tunnel.sh reload` sends `SIGHUP` to the supervisor and rolls the server process without dropping the public `/mcp` endpoint
-- for a fresh clone, you do not need to run `pip install` manually before using this script
+- `.env` and `cloudflared.local.yml` are both gitignored, so your local secrets and named-tunnel config stay out of git
+- it prefers `cloudflared.local.yml` or `cloudflared.local.yaml` if present; otherwise it opens a `cloudflared` quick tunnel to your local server
+- you do **not** need to run `pip install` manually before using this script on a fresh clone
 
-### Rolling Reload Without Dropping The Tunnel
+## Rolling Reload Without Dropping The Tunnel
 
 Once `./scripts/dev-tunnel.sh` is already running in one terminal or tmux pane, use this from another shell:
 
@@ -241,7 +245,7 @@ Once `./scripts/dev-tunnel.sh` is already running in one terminal or tmux pane, 
 
 This keeps `cloudflared` attached to the same local port while the supervisor starts a fresh MCP server process, waits for readiness, and then drains the old one. It is the recommended way to pick up code changes without causing transient 502 responses to Notion.
 
-### Expose With cloudflared
+## Expose With cloudflared
 
 #### Quick tunnel
 
