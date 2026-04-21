@@ -12,31 +12,92 @@
 - 让 MCP Agent 真正在本地仓库里工作，而不只是编辑 Notion 页面
 - 支持通过本地 `codex` 或 `claude` 委托长任务
 
-## 快速开始
+## 准备工作
+
+开始之前先装好下面这些工具。Windows 用户请在 **Git Bash** 或 **WSL** 里执行本文档中的所有命令，否则 `.sh` 脚本不会正常工作。
+
+| 工具 | 用途 | 检查是否安装 |
+| --- | --- | --- |
+| Python 3.11+ | 运行 MCP 服务 | `python --version` |
+| Git | 克隆本仓库 | `git --version` |
+| `cloudflared` | 把本地服务通过 HTTPS 暴露给 Notion | `cloudflared --version` |
+
+可选（只有在需要 `delegate_task` 把任务交给另一个 CLI agent 时才装）：
+
+- `codex` CLI — https://github.com/openai/codex
+- `claude` CLI — https://docs.anthropic.com/claude/docs/claude-cli
+
+另外还需要一个可以配置 **自定义 MCP Agent** 的 Notion 工作区。
+
+## 快速开始（5 步）
+
+### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
 cd notion-local-ops-mcp
-cp .env.example .env
-./scripts/dev-tunnel.sh
 ```
 
-至少设置：
+### 2. 创建 `.env` 文件
+
+`.env` 用于存放你的本地密钥，已加入 gitignore，不会被提交。
 
 ```bash
+cp .env.example .env
+```
+
+用编辑器打开 `.env`，至少填好下面两个值：
+
+```bash
+# MCP agent 可以读写的目录的绝对路径。
+#   macOS / Linux 示例：      /Users/you/Code/my-project
+#   Windows Git Bash 示例：   /c/Users/you/Code/my-project
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
+
+# 一段长随机串，把它当密码对待 —— 之后要原样填到 Notion 里。
+# 提示：可以用 `openssl rand -hex 32` 生成。
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-## 关键 MCP Agent 配置
+### 3. 一条命令启动本地服务 + 公网 tunnel
 
-在 Notion 里的 MCP Agent 配置中使用：
+```bash
+./scripts/dev-tunnel.sh
+```
 
-- URL：`https://<your-domain-or-tunnel>/mcp`
-- Auth type：`Bearer`
-- Token：`NOTION_LOCAL_OPS_AUTH_TOKEN`
+首次运行时脚本会自动：
 
-下面这版 prompt 是给 **MCP Agent** 用的，不是给 Notion AI 指令页用的。
+- 在 `.venv/` 建立虚拟环境并安装 Python 依赖
+- 在 `http://127.0.0.1:8766/mcp` 启动 MCP 服务
+- 开一个 `cloudflared` quick tunnel，并打印出类似这样的公网 HTTPS 地址：
+
+```text
+https://random-words-1234.trycloudflare.com
+```
+
+**保持这个终端不要关。** 这个打印出来的地址就是 Notion 连接你电脑的入口，关终端就断了。
+
+### 4. 把地址填进 Notion MCP Agent
+
+在 Notion 里打开（或新建）一个 MCP Agent，添加自定义 MCP 服务，完全按下表填：
+
+| 字段 | 值 |
+| --- | --- |
+| URL | 把第 3 步打印出的 tunnel 地址后面补 `/mcp`，例如 `https://random-words-1234.trycloudflare.com/mcp` |
+| Auth type | `Bearer` |
+| Token | `.env` 里 `NOTION_LOCAL_OPS_AUTH_TOKEN` 的原样值 |
+
+保存。几秒钟后 Notion 应该会加载出工具列表。
+
+### 5. 粘贴 MCP Agent prompt
+
+把下一节的 prompt 复制进这个 MCP Agent 的 **prompt 框**（不是 Notion AI 指令页）。它会告诉 agent 怎么用这些本地工具。
+
+出问题请看下面的 [故障排查](#故障排查)。
+
+## MCP Agent Prompt
+
+把下面这段 prompt 粘贴到你的 MCP Agent 的 prompt 框里。
 
 <details>
 <summary><strong>推荐 MCP Agent prompt</strong></summary>
@@ -117,71 +178,28 @@ Output style:
 - [Optional use case: Notion AI instruction page + project management](./docs/notion-use-case.md)
 - [可选应用场景：Notion AI 页面级指令 + 项目管理](./docs/notion-use-case.zh-CN.md)
 
-## 运行要求
+## 手动安装（`dev-tunnel.sh` 的备选方案）
 
-- Python 3.11+
-- `cloudflared`
-- 一个可在 Notion 中配置自定义 MCP 的 **MCP Agent**
-- 可选：`codex` CLI
-- 可选：`claude` CLI
+只有当你想手动控制每一步时才用这条路径。如果 [快速开始](#快速开始5-步) 中的 `./scripts/dev-tunnel.sh` 已经能跑，跳过本节即可。
 
-## 详细配置
-
-如果你想按完整步骤配置，可以走这条路径：
+### 1. 创建虚拟环境并安装
 
 ```bash
-git clone https://github.com/<your-account>/notion-local-ops-mcp.git
-cd notion-local-ops-mcp
-
-cp .env.example .env
-```
-
-编辑 `.env`，至少设置：
-
-```bash
-NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
-NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
-```
-
-然后运行：
-
-```bash
-./scripts/dev-tunnel.sh
-```
-
-你应该看到：
-
-- 脚本创建或复用 `.venv`
-- 自动安装缺失的 Python 依赖
-- 本地 MCP 服务通过一个平滑重载 supervisor 启动在 `http://127.0.0.1:8766/mcp`
-- 脚本会打印 `./scripts/dev-tunnel.sh reload`，用于不掉 tunnel 地重载本地服务
-- 优先使用 `cloudflared.local.yml` 命名 tunnel
-- 否则回退到 `cloudflared` quick tunnel，并打印公网 HTTPS 地址
-
-在 Notion 里配置时，使用这个输出地址并在后面补上 `/mcp`，同时使用 `NOTION_LOCAL_OPS_AUTH_TOKEN` 作为 Bearer token。
-
-### 手动安装
-
-```bash
-git clone https://github.com/<your-account>/notion-local-ops-mcp.git
-cd notion-local-ops-mcp
-
 python3.11 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate         # Windows Git Bash：source .venv/Scripts/activate
 pip install -e ".[dev]"
 ```
 
-### 配置
+### 2. 创建并编辑 `.env`
 
-如果你不使用一键启动流程，就先复制 `.env.example` 到 `.env`，至少设置：
+和 [快速开始](#快速开始5-步) 第 2 步一样。必填项：
 
 ```bash
-cp .env.example .env
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-可选项：
+可选项（完整列表见 [环境变量](#环境变量)）：
 
 ```bash
 NOTION_LOCAL_OPS_CODEX_COMMAND="codex"
@@ -191,7 +209,7 @@ NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS="30"
 ```
 
-### 手动启动
+### 3. 前台启动 MCP 服务
 
 ```bash
 source .venv/bin/activate
@@ -204,34 +222,20 @@ notion-local-ops-mcp
 http://127.0.0.1:8766/mcp
 ```
 
-### 一键本地开发 Tunnel
+## `./scripts/dev-tunnel.sh` 行为说明
 
-推荐的本地工作流：
+用 [快速开始](#快速开始5-步) 的一键脚本时，有些细节知道一下就好：
 
-```bash
-./scripts/dev-tunnel.sh
-```
-
-这个脚本会：
-
-- 复用或创建 `.venv`
-- 安装缺失的运行时依赖
+- 复用或创建 `.venv` 并安装缺失的运行时依赖
 - 如果存在 `.env`，自动从仓库根目录加载
 - 在平滑重载 supervisor 后面启动 `notion-local-ops-mcp`
-- 通过 `./scripts/dev-tunnel.sh reload` 先拉起新进程、再排空旧进程，尽量避免 tunnel 短暂 502
-- 如果存在 `cloudflared.local.yml` 或 `cloudflared.local.yaml`，优先使用它
-- 否则自动打开一个 `cloudflared` quick tunnel
-
-注意：
-
-- `.env` 已加入 gitignore，所以本地 token 和 workspace 路径不会进 git
-- `cloudflared.local.yml` 已加入 gitignore，所以你的本地 tunnel 配置也不会进 git
 - 如果 `NOTION_LOCAL_OPS_WORKSPACE_ROOT` 未设置，脚本会默认使用仓库根目录
 - 如果 `NOTION_LOCAL_OPS_AUTH_TOKEN` 未设置，脚本会直接报错退出，而不是猜测
-- `./scripts/dev-tunnel.sh reload` 会向 supervisor 发送 `SIGHUP`，在不丢公网 `/mcp` 入口的情况下滚动替换本地服务进程
-- 全新 clone 后，通常不需要先手动执行 `pip install`
+- `.env` 和 `cloudflared.local.yml` 均已加入 gitignore，本地密钥和命名 tunnel 配置不会进 git
+- 如果存在 `cloudflared.local.yml` 或 `cloudflared.local.yaml`，优先使用；否则自动打开一个 `cloudflared` quick tunnel
+- 全新 clone 后**不需要**先手动执行 `pip install`
 
-### 不掉 Tunnel 的平滑重载
+## 不掉 Tunnel 的平滑重载
 
 当 `./scripts/dev-tunnel.sh` 已经在一个终端或 tmux pane 里跑起来后，可以在另一个 shell 执行：
 
@@ -241,7 +245,7 @@ http://127.0.0.1:8766/mcp
 
 这个命令会保持 `cloudflared` 仍然连在同一个本地端口上，同时 supervisor 先拉起新的 MCP 服务、确认 ready，再让旧进程进入 drain。调试代码时，推荐优先用它而不是直接把整条 tunnel 会话杀掉。
 
-### 用 cloudflared 暴露服务
+## 用 cloudflared 暴露服务
 
 #### Quick tunnel
 
