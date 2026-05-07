@@ -258,7 +258,10 @@ http://127.0.0.1:8766/mcp
 - 一个 timer 型 LaunchAgent，每隔 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
   秒执行一次 `launchd-doctor.sh --fix`
 - 两者退出后由 `launchd KeepAlive` 自动拉起
-- local `/mcp` 或 public `/mcp` 连续检查失败时，只重启对应失败层
+- local `/mcp` 或 public `/mcp` 连续
+  `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD` 次检查失败时，只重启对应失败层
+- 重启使用指数退避：从 `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS`
+  开始，最大不超过 `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`
 
 安装后常用命令：
 
@@ -279,6 +282,10 @@ http://127.0.0.1:8766/mcp
   `./scripts/install-launchd.sh`；否则用 `./scripts/launchd-restart.sh mcp`
 - tunnel 配置变更：`./scripts/launchd-restart.sh cloudflared`
 - watchdog 间隔变更：设置 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` 后重跑
+  `./scripts/install-launchd.sh`
+- doctor / 退避参数变更：设置 `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD`、
+  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS` 或
+  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS` 后重跑
   `./scripts/install-launchd.sh`
 
 ### 用 cloudflared 暴露服务

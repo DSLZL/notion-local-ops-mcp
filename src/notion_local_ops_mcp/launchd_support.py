@@ -139,13 +139,19 @@ def build_watchdog_launch_agent(
             "PATH": config.env["PATH"],
             "NOTION_LOCAL_OPS_HOST": config.env.get("NOTION_LOCAL_OPS_HOST"),
             "NOTION_LOCAL_OPS_PORT": config.env.get("NOTION_LOCAL_OPS_PORT"),
+            "NOTION_LOCAL_OPS_STATE_DIR": config.env.get("NOTION_LOCAL_OPS_STATE_DIR"),
             "NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX": config.label_prefix,
             "NOTION_LOCAL_OPS_LAUNCHD_DIR": str(config.launch_agents_dir),
             "NOTION_LOCAL_OPS_LAUNCHD_LOG_DIR": str(config.logs_dir),
-            **{
-                key: config.env.get(key)
-                for key in CLOUDFLARED_PROXY_ENV_KEYS
-            },
+            "NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD": config.env.get(
+                "NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD"
+            ),
+            "NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS": config.env.get(
+                "NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS"
+            ),
+            "NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS": config.env.get(
+                "NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS"
+            ),
         }.items()
         if value
     }

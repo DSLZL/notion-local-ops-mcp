@@ -142,6 +142,9 @@ def test_build_watchdog_launch_agent_runs_doctor_on_interval(tmp_path: Path) -> 
             **config.env,
             "HTTPS_PROXY": "http://127.0.0.1:7890",
             "NO_PROXY": "127.0.0.1,localhost",
+            "NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD": "3",
+            "NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS": "300",
+            "NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS": "3600",
         },
     )
 
@@ -161,11 +164,13 @@ def test_build_watchdog_launch_agent_runs_doctor_on_interval(tmp_path: Path) -> 
         "PATH": "/opt/homebrew/bin:/usr/bin:/bin",
         "NOTION_LOCAL_OPS_HOST": "127.0.0.1",
         "NOTION_LOCAL_OPS_PORT": "8766",
+        "NOTION_LOCAL_OPS_STATE_DIR": "/tmp/state",
         "NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX": "com.example.notion-local-ops",
         "NOTION_LOCAL_OPS_LAUNCHD_DIR": str(config.launch_agents_dir),
         "NOTION_LOCAL_OPS_LAUNCHD_LOG_DIR": str(config.logs_dir),
-        "HTTPS_PROXY": "http://127.0.0.1:7890",
-        "NO_PROXY": "127.0.0.1,localhost",
+        "NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD": "3",
+        "NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS": "300",
+        "NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS": "3600",
     }
     assert payload["StandardOutPath"] == str(config.logs_dir / "watchdog.stdout.log")
     assert payload["StandardErrorPath"] == str(config.logs_dir / "watchdog.stderr.log")

@@ -321,7 +321,10 @@ What gets installed:
   `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` seconds
 - automatic restart via `launchd` `KeepAlive` when either process exits
 - health-based restart when local `/mcp` or public `/mcp` stays unreachable
-  after one retry
+  for `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD` checks
+- exponential restart backoff starting at
+  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS` and capped by
+  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`
 
 Useful commands after install:
 
@@ -344,6 +347,10 @@ Update workflow:
 - tunnel config changes: `./scripts/launchd-restart.sh cloudflared`
 - watchdog interval changes: set `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
   and rerun `./scripts/install-launchd.sh`
+- doctor/backoff changes: set `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD`,
+  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS`, or
+  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`, then rerun
+  `./scripts/install-launchd.sh`
 
 ### Expose With cloudflared
 
