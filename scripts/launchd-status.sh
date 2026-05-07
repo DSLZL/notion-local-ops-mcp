@@ -7,7 +7,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/launchd-common.sh"
 prepare_launchd_env
 require_command launchctl
 
-for label in "$(mcp_label)" "$(cloudflared_label)"; do
+for label in "$(mcp_label)" "$(cloudflared_label)" "$(watchdog_label)"; do
   target="$(launchctl_target "${label}")"
   echo "=== ${target} ==="
   if launchctl print "${target}" >/tmp/notion-local-ops-launchctl.print 2>&1; then
@@ -41,3 +41,5 @@ fi
 
 echo
 echo "Logs: ${NOTION_LOCAL_OPS_LAUNCHD_LOG_DIR}"
+echo
+echo "Run ./scripts/launchd-doctor.sh --fix for an immediate health check and targeted restart."

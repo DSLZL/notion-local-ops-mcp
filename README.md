@@ -317,12 +317,18 @@ What gets installed:
 
 - one LaunchAgent for the local MCP supervisor
 - one LaunchAgent for `cloudflared tunnel run`
+- one timer-style LaunchAgent that runs `launchd-doctor.sh --fix` every
+  `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` seconds
 - automatic restart via `launchd` `KeepAlive` when either process exits
+- health-based restart when local `/mcp` or public `/mcp` stays unreachable
+  after one retry
 
 Useful commands after install:
 
 ```bash
 ./scripts/launchd-status.sh
+./scripts/launchd-doctor.sh          # diagnose local vs public /mcp
+./scripts/launchd-doctor.sh --fix    # restart only the failed layer
 ./scripts/launchd-reload.sh           # code-only rolling reload via HUP
 ./scripts/launchd-restart.sh mcp      # full MCP restart after dependency/env changes
 ./scripts/launchd-restart.sh all      # restart MCP + cloudflared
@@ -336,6 +342,8 @@ Update workflow:
   the rendered plist or dependency constraints may be stale, otherwise use
   `./scripts/launchd-restart.sh mcp`
 - tunnel config changes: `./scripts/launchd-restart.sh cloudflared`
+- watchdog interval changes: set `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
+  and rerun `./scripts/install-launchd.sh`
 
 ### Expose With cloudflared
 

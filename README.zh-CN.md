@@ -255,12 +255,17 @@ http://127.0.0.1:8766/mcp
 
 - 一个本地 MCP supervisor 的 LaunchAgent
 - 一个 `cloudflared tunnel run` 的 LaunchAgent
+- 一个 timer 型 LaunchAgent，每隔 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
+  秒执行一次 `launchd-doctor.sh --fix`
 - 两者退出后由 `launchd KeepAlive` 自动拉起
+- local `/mcp` 或 public `/mcp` 连续检查失败时，只重启对应失败层
 
 安装后常用命令：
 
 ```bash
 ./scripts/launchd-status.sh
+./scripts/launchd-doctor.sh         # 判断 local / public 哪层挂了
+./scripts/launchd-doctor.sh --fix   # 只重启失败层
 ./scripts/launchd-reload.sh          # 代码更新后的平滑 reload
 ./scripts/launchd-restart.sh mcp     # 依赖/环境变更后的 MCP 全量重启
 ./scripts/launchd-restart.sh all     # MCP + cloudflared 一起重启
@@ -273,6 +278,8 @@ http://127.0.0.1:8766/mcp
 - 依赖 / `.venv` / env 变更：如果依赖约束或 plist 环境可能过期，先重跑
   `./scripts/install-launchd.sh`；否则用 `./scripts/launchd-restart.sh mcp`
 - tunnel 配置变更：`./scripts/launchd-restart.sh cloudflared`
+- watchdog 间隔变更：设置 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` 后重跑
+  `./scripts/install-launchd.sh`
 
 ### 用 cloudflared 暴露服务
 
