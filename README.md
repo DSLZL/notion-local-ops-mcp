@@ -59,45 +59,77 @@ NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-### 3. Start the local server + public tunnel (one command)
+## Important MCP Agent Configuration
+
+Use this in your MCP Agent configuration inside Notion:
+
+- URL: `https://<your-domain-or-tunnel>/mcp`
+- Auth type: `Bearer`
+- Token: `NOTION_LOCAL_OPS_AUTH_TOKEN`
+
+## ChatGPT Web OAuth
+
+ChatGPT web developer mode expects an HTTPS MCP endpoint and can connect with
+OAuth. This project implements a minimal OAuth compatibility mode for local
+use: dynamic client registration, PKCE authorization code flow, protected
+resource metadata, and bearer access tokens. It does not implement a full user
+account system or ChatGPT iframe UI widgets.
+
+Enable OAuth mode in `.env`:
 
 ```bash
-./scripts/dev-tunnel.sh
+NOTION_LOCAL_OPS_AUTH_MODE=oauth
+NOTION_LOCAL_OPS_PUBLIC_BASE_URL="https://<your-domain-or-tunnel>"
+NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
+# Optional: use a separate login token for the OAuth authorization page.
+# NOTION_LOCAL_OPS_OAUTH_LOGIN_TOKEN="replace-me"
 ```
 
-The first run will:
+Then restart the service. For launchd-managed installs, reinstall or restart so
+the generated plist receives the new env values:
 
-- create a virtualenv at `.venv/` and install Python dependencies automatically
-- start the MCP server on `http://127.0.0.1:8766/mcp`
-- open a `cloudflared` quick tunnel and print a public HTTPS URL similar to:
-
-```text
-https://random-words-1234.trycloudflare.com
+```bash
+./scripts/install-launchd.sh
 ```
 
-**Keep this terminal open.** That printed URL is how Notion reaches your computer; if you close the terminal the connection drops.
+Create the ChatGPT app/connector with:
 
-### 4. Add the server to a Notion MCP Agent
+- MCP server URL: `https://<your-domain-or-tunnel>/mcp`
+- Authentication: `OAuth`
+- Client registration: dynamic registration, if ChatGPT offers the choice
 
-In Notion, open (or create) an MCP Agent and add a custom MCP server with these exact values:
+When ChatGPT opens the authorization page, enter `NOTION_LOCAL_OPS_AUTH_TOKEN`
+unless `NOTION_LOCAL_OPS_OAUTH_LOGIN_TOKEN` is set.
 
-| Field | Value |
-| --- | --- |
-| URL | the tunnel URL from step 3 with `/mcp` appended, e.g. `https://random-words-1234.trycloudflare.com/mcp` |
-| Auth type | `Bearer` |
-| Token | the exact value of `NOTION_LOCAL_OPS_AUTH_TOKEN` from your `.env` |
+Smoke-test the public OAuth surface before adding it to ChatGPT:
 
-Save. Notion should load the tool list within a few seconds.
+```bash
+curl -sS https://<your-domain-or-tunnel>/.well-known/oauth-protected-resource/mcp
+curl -sS https://<your-domain-or-tunnel>/.well-known/oauth-authorization-server
+curl -i https://<your-domain-or-tunnel>/mcp
+```
 
-### 5. Paste the MCP Agent prompt
+The first two commands should return JSON metadata. The `/mcp` request without
+credentials should return `401` with a `WWW-Authenticate` header containing
+`resource_metadata`.
 
-Copy the prompt in the next section into the MCP Agent's **prompt** field (not the Notion AI instruction page). It teaches the agent how to use the local tools.
+### OAuth security notes
 
-If anything fails, jump to [Troubleshooting](#troubleshooting).
+- **Always set `NOTION_LOCAL_OPS_PUBLIC_BASE_URL`** in OAuth mode. Without it
+  the issuer URL falls back to the request `Host` header, which a tunnel
+  attacker can spoof to steer OAuth metadata at a phishing host. The server
+  prints a startup warning when this happens.
+- **Prefer a dedicated `NOTION_LOCAL_OPS_OAUTH_LOGIN_TOKEN`.** If it falls back
+  to `AUTH_TOKEN`, anyone who briefly sees `AUTH_TOKEN` can mint a long-TTL
+  OAuth access token (default 24h) that survives a token rotation. After
+  rotating `AUTH_TOKEN`, also clear the `tokens` map in
+  `<STATE_DIR>/oauth.json` to invalidate any minted access tokens.
+- `oauth.json` and the `STATE_DIR` task tree are written with `0o600`/`0o700`
+  permissions so other local users cannot read minted tokens or task logs.
+  Existing files created before this change should be `chmod`'d manually
+  (`chmod 600 ~/.notion-local-ops-mcp/oauth.json`).
 
-## MCP Agent Prompt
-
-Paste the prompt below into your MCP Agent's prompt field.
+Use the prompt below for the **MCP Agent**. It is not for the Notion AI instruction page.
 
 <details>
 <summary><strong>Recommended MCP Agent prompt</strong></summary>
@@ -130,7 +162,7 @@ Tool strategy:
 - server_info: call first when troubleshooting connection/runtime mismatches.
 - set_default_cwd / get_default_cwd: set once for repeated repo operations instead of passing cwd every time.
 - In coding tasks, search the local repo first. Do not default to searching the Notion workspace.
-- apply_patch: use this as the default edit tool for existing files, including small edits, multi-hunk edits, moves, deletes, or adds in one patch. Use dry_run=true, validate_only=true, or return_diff=true when you want validation or a preview before writing.
+- apply_patch: use this as the default edit tool for existing files, including small edits, multi-hunk edits, moves, deletes, or adds in one patch. Each @@ hunk must include at least one '+' or '-' line and must match exactly one location in the file. Use dry_run=true, validate_only=true, or return_diff=true when you want validation or a preview before writing.
 - write_file: create new files or rewrite short files when that is simpler than patching; use dry_run=true for no-write preview.
 - run_command_stream: start long-running shell jobs with immediate task_id return for polling progress. Prefer it for tests, installs, builds, compile steps, and other jobs that may take a while.
 - get_task / wait_task: check delegated task or background command status; prefer wait_task when blocking is useful.
@@ -178,11 +210,51 @@ If you also want the **Notion AI instruction page + project-management** workflo
 - [Optional use case: Notion AI instruction page + project management](./docs/notion-use-case.md)
 - [可选应用场景：Notion AI 页面级指令 + 项目管理](./docs/notion-use-case.zh-CN.md)
 
-## Manual Install (alternative to `dev-tunnel.sh`)
+## Requirements
 
-Use this path only if you want to run each piece yourself. If `./scripts/dev-tunnel.sh` from [Quick Start](#quick-start-5-steps) works for you, skip this section.
+- Python 3.11+
+- FastMCP 3.x (`fastmcp>=3.2.4,<4`, installed from `pyproject.toml`)
+- `cloudflared`
+- A Notion workspace where you can configure an **MCP Agent** with custom MCP support
+- Optional: `codex` CLI
+- Optional: `claude` CLI
 
-### 1. Create a virtualenv and install the package
+## Detailed Setup
+
+If you prefer the full step-by-step setup, follow this path:
+
+```bash
+git clone https://github.com/<your-account>/notion-local-ops-mcp.git
+cd notion-local-ops-mcp
+
+cp .env.example .env
+```
+
+Edit `.env` and set at least:
+
+```bash
+NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
+NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
+```
+
+Then run:
+
+```bash
+./scripts/dev-tunnel.sh
+```
+
+What you should expect:
+
+- the script creates or reuses `.venv`
+- the script installs missing or incompatible Python dependencies automatically
+- the script starts the local MCP server on `http://127.0.0.1:8766/mcp` through a rolling-reload supervisor
+- the script prints a `./scripts/dev-tunnel.sh reload` command so you can restart the local server without dropping the tunnel
+- the script prefers `cloudflared.local.yml` for a named tunnel
+- otherwise it falls back to a `cloudflared` quick tunnel and prints a public HTTPS URL
+
+Use the printed tunnel URL with `/mcp` appended in Notion, and use `NOTION_LOCAL_OPS_AUTH_TOKEN` as the Bearer token.
+
+### Manual Install
 
 ```bash
 python3.11 -m venv .venv
@@ -207,6 +279,7 @@ NOTION_LOCAL_OPS_CLAUDE_COMMAND="claude"
 NOTION_LOCAL_OPS_COMMAND_TIMEOUT="120"
 NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
 NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS="30"
+NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX="com.notion-local-ops"
 ```
 
 ### 3. Start the MCP server in the foreground
@@ -245,7 +318,54 @@ Once `./scripts/dev-tunnel.sh` is already running in one terminal or tmux pane, 
 
 This keeps `cloudflared` attached to the same local port while the supervisor starts a fresh MCP server process, waits for readiness, and then drains the old one. It is the recommended way to pick up code changes without causing transient 502 responses to Notion.
 
-## Expose With cloudflared
+### Persistent macOS launchd install
+
+Use this when the MCP server should stay up even if your shell or tmux pane dies:
+
+```bash
+./scripts/install-launchd.sh
+```
+
+What gets installed:
+
+- one LaunchAgent for the local MCP supervisor
+- one LaunchAgent for `cloudflared tunnel run`
+- one timer-style LaunchAgent that runs `launchd-doctor.sh --fix` every
+  `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` seconds
+- automatic restart via `launchd` `KeepAlive` when either process exits
+- health-based restart when local `/mcp` or public `/mcp` stays unreachable
+  for `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD` checks
+- exponential restart backoff starting at
+  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS` and capped by
+  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`
+
+Useful commands after install:
+
+```bash
+./scripts/launchd-status.sh
+./scripts/launchd-doctor.sh          # diagnose local vs public /mcp
+./scripts/launchd-doctor.sh --fix    # restart only the failed layer
+./scripts/launchd-reload.sh           # code-only rolling reload via HUP
+./scripts/launchd-restart.sh mcp      # full MCP restart after dependency/env changes
+./scripts/launchd-restart.sh all      # restart MCP + cloudflared
+./scripts/uninstall-launchd.sh
+```
+
+Update workflow:
+
+- Python/code-only changes: `./scripts/launchd-reload.sh`
+- dependency / `.venv` / env changes: rerun `./scripts/install-launchd.sh` when
+  the rendered plist or dependency constraints may be stale, otherwise use
+  `./scripts/launchd-restart.sh mcp`
+- tunnel config changes: `./scripts/launchd-restart.sh cloudflared`
+- watchdog interval changes: set `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
+  and rerun `./scripts/install-launchd.sh`
+- doctor/backoff changes: set `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD`,
+  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS`, or
+  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`, then rerun
+  `./scripts/install-launchd.sh`
+
+### Expose With cloudflared
 
 #### Quick tunnel
 
@@ -279,6 +399,11 @@ cloudflared tunnel --config ./cloudflared-example.yml run <your-tunnel-name>
 | `NOTION_LOCAL_OPS_WORKSPACE_ROOT` | yes | home directory |
 | `NOTION_LOCAL_OPS_STATE_DIR` | no | `~/.notion-local-ops-mcp` |
 | `NOTION_LOCAL_OPS_AUTH_TOKEN` | no | empty |
+| `NOTION_LOCAL_OPS_AUTH_MODE` | no | `shared_token` when `AUTH_TOKEN` is set, otherwise `none` |
+| `NOTION_LOCAL_OPS_PUBLIC_BASE_URL` | required for OAuth | empty |
+| `NOTION_LOCAL_OPS_OAUTH_LOGIN_TOKEN` | no | falls back to `AUTH_TOKEN` |
+| `NOTION_LOCAL_OPS_OAUTH_SCOPES` | no | `local-ops` |
+| `NOTION_LOCAL_OPS_OAUTH_TOKEN_TTL_SECONDS` | no | `86400` |
 | `NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG` | no | empty |
 | `NOTION_LOCAL_OPS_TUNNEL_NAME` | no | empty |
 | `NOTION_LOCAL_OPS_CODEX_COMMAND` | no | `codex` |
@@ -287,6 +412,7 @@ cloudflared tunnel --config ./cloudflared-example.yml run <your-tunnel-name>
 | `NOTION_LOCAL_OPS_DELEGATE_TIMEOUT` | no | `1800` |
 | `NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING` | no | `0` |
 | `NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS` | no | `30` |
+| `NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX` | no | `com.notion-local-ops` |
 
 ## MCP Tools
 
@@ -295,7 +421,7 @@ cloudflared tunnel --config ./cloudflared-example.yml run <your-tunnel-name>
 - `search`: canonical query tool that unifies glob path search, regex grep, and literal substring search; excludes hidden and `.gitignore`d paths by default and supports regex/text search against a single file path
 - `read_text`: canonical single/batch reader with line-based pagination (`start_line`/`line_limit`), optional `include_line_numbers`, and `language` hint
 - `write_file`: write full file content, supports `dry_run`
-- `apply_patch`: default edit tool for existing files; supports add/update/move/delete patches plus `dry_run`, `validate_only`, and optional diff output
+- `apply_patch`: default edit tool for existing files; uses `*** Begin Patch` / `*** Update File` syntax, rejects pure-context hunks, requires unique context matches, and returns per-file change stats/warnings
 - `server_info`: inspect runtime config and the registered MCP tool list
 - `set_default_cwd`: set session default working directory for subsequent calls
 - `get_default_cwd`: inspect current session/effective working directory
@@ -355,7 +481,8 @@ pytest -q tests/test_server_transport.py tests/test_concurrent_clients.py tests/
 - Check the auth type is `Bearer`
 - Check the token matches `NOTION_LOCAL_OPS_AUTH_TOKEN`
 - Check `cloudflared` is still running
-- If you are updating the server while users are connected, prefer `./scripts/dev-tunnel.sh reload` over killing and restarting the whole tunnel session
+- If you installed the macOS LaunchAgents, start with `./scripts/launchd-status.sh`
+- If you are updating the server while users are connected, prefer `./scripts/dev-tunnel.sh reload` or `./scripts/launchd-reload.sh` over killing the whole tunnel session
 
 ### MCP endpoint works locally but not over tunnel
 
