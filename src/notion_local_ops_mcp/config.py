@@ -26,6 +26,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # python-dotenv not installed yet; fall back to raw env only
+    load_dotenv = None  # type: ignore[assignment]
+
+# Load the repo-root .env so configuration persists across launch methods.
+# Existing process env wins (override=False) to preserve explicit overrides.
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+if load_dotenv is not None and _ENV_FILE.is_file():
+    load_dotenv(_ENV_FILE, override=False)
+
 
 def _env_flag(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)

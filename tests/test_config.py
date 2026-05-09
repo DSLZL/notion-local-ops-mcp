@@ -1,8 +1,44 @@
 from __future__ import annotations
 
+import importlib.util
+import os
+from pathlib import Path
+
 import pytest
 
 from notion_local_ops_mcp import config
+
+
+def _load_main_claude_module():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "main-claude.py"
+    spec = importlib.util.spec_from_file_location("main_claude_for_tests", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_main_claude_load_env_file_prefers_env_file_over_existing_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_main_claude_module()
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        'NOTION_LOCAL_OPS_WORKSPACE_ROOT="C:/Users/Long/Desktop/folder/Code/notion"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(module, "ENV_FILE", env_file)
+    monkeypatch.setenv(
+        "NOTION_LOCAL_OPS_WORKSPACE_ROOT",
+        "C:/Users/Long/Desktop/folder/Code/z.ai",
+    )
+
+    module.load_env_file()
+
+    assert os.environ["NOTION_LOCAL_OPS_WORKSPACE_ROOT"] == (
+        "C:/Users/Long/Desktop/folder/Code/notion"
+    )
 
 
 def test_ensure_runtime_directories_requires_existing_workspace_root(
