@@ -36,11 +36,11 @@ def test_extract_public_url_falls_back_to_first_valid_non_https_url() -> None:
     payload = {
         "tunnels": [
             {"public_url": "   "},
-            {"public_url": "https://secure.ngrok-free.app"},
-            {"public_url": "http://fallback.ngrok-free.app"},
+            {"public_url": "   http://first-valid.ngrok-free.app   "},
+            {"public_url": "http://second-valid.ngrok-free.app"},
         ]
     }
-    assert extract_public_url(payload) == "https://secure.ngrok-free.app"
+    assert extract_public_url(payload) == "http://first-valid.ngrok-free.app"
 
 
 def test_ngrok_health_url_changed_to_detects_url_change() -> None:
