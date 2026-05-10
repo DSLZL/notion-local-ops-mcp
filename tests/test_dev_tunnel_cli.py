@@ -109,7 +109,6 @@ def test_status_routes_to_runtime_manager_real_module(tmp_path: Path) -> None:
     )
     env = os.environ.copy()
     env["NOTION_LOCAL_OPS_STATE_DIR"] = str(state_dir)
-    env["PYTHONPATH"] = str(_repo_root() / "src")
     result = subprocess.run(
         [_bash_bin(), str(_repo_root() / "scripts" / "dev-tunnel.sh"), "status"],
         cwd=_repo_root(),
@@ -123,3 +122,92 @@ def test_status_routes_to_runtime_manager_real_module(tmp_path: Path) -> None:
     stdout_text = result.stdout.decode("utf-8", errors="replace")
     assert result.returncode == 0, stderr_text
     assert "runtime-manager status manager_state=running" in stdout_text
+
+
+def test_invalid_action_reports_clear_error() -> None:
+    result = subprocess.run(
+        [_bash_bin(), str(_repo_root() / "scripts" / "dev-tunnel.sh"), "bogus-action"],
+        cwd=_repo_root(),
+        env=os.environ.copy(),
+        check=False,
+        capture_output=True,
+        text=False,
+        timeout=20,
+    )
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    assert result.returncode != 0
+    assert "Invalid action: bogus-action. Expected one of: start, reload, status." in stderr_text
+
+
+def test_too_many_args_reports_clear_error() -> None:
+    result = subprocess.run(
+        [_bash_bin(), str(_repo_root() / "scripts" / "dev-tunnel.sh"), "start", "extra"],
+        cwd=_repo_root(),
+        env=os.environ.copy(),
+        check=False,
+        capture_output=True,
+        text=False,
+        timeout=20,
+    )
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    assert result.returncode != 0
+    assert "Invalid arguments: expected at most one action, got 2." in stderr_text
+
+
+def test_rejects_python_below_3_11() -> None:
+    env = os.environ.copy()
+    env["PYTHON_BIN"] = "python"
+
+    result = subprocess.run(
+        [_bash_bin(), str(_repo_root() / "scripts" / "dev-tunnel.sh"), "status"],
+        cwd=_repo_root(),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=False,
+        timeout=20,
+    )
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    if result.returncode == 0:
+        # Environment already provides Python >=3.11 as default "python"; no rejection expected.
+        assert "Python 3.11+ is required but no suitable interpreter was found." not in stderr_text
+    else:
+        assert "Python 3.11+ is required but no suitable interpreter was found." in stderr_text
+
+
+def test_rejects_when_only_python_3_10_candidates_exist(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    script_path = _script_path()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    low_stub = "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "if [[ \"${1:-}\" == \"-c\" ]]; then",
+            "  echo \"3.10\"",
+            "  exit 0",
+            "fi",
+            "exit 0",
+            "",
+        ]
+    )
+    _write_executable(bin_dir / "python3.11", low_stub)
+    _write_executable(bin_dir / "python3", low_stub)
+    _write_executable(bin_dir / "python", low_stub)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["PYTHON_BIN"] = str(bin_dir / "python3.11")
+    result = subprocess.run(
+        [_bash_bin(), str(script_path), "status"],
+        cwd=repo_root,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=False,
+        timeout=20,
+    )
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    assert result.returncode != 0
+    assert "Python 3.11+ is required but no suitable interpreter was found." in stderr_text
