@@ -5,5 +5,7 @@ def next_backoff_seconds(
     failures: int,
     jitter: float,
 ) -> float:
-    raw = base * (2 ** max(0, failures)) + max(0.0, jitter)
-    return min(max_seconds, raw)
+    safe_base = max(0.0, base)
+    safe_max = max(0.0, max_seconds)
+    raw = safe_base * (2 ** max(0, failures)) + max(0.0, jitter)
+    return max(0.0, min(safe_max, raw))
