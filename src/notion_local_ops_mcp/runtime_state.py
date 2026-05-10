@@ -40,9 +40,8 @@ def default_state_path(state_dir: Path) -> Path:
 def record_public_url(state: RuntimeState, public_url: str | None) -> tuple[RuntimeState, str | None]:
     next_url = public_url.strip() if isinstance(public_url, str) else None
     if not next_url:
-        if state.public_url is None:
-            return state, None
-        return replace(state, public_url=None), None
+        # Keep last-known URL on transient missing samples from ngrok status probes.
+        return state, None
 
     if state.public_url == next_url:
         return state, None

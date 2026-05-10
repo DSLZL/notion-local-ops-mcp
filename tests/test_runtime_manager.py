@@ -72,7 +72,7 @@ def test_manager_recovers_ngrok_without_restarting_server(tmp_path: Path) -> Non
     )
     result = manager.orchestrate(previous_state=previous, snapshot=recovering_snapshot)
 
-    assert result.state.manager_state in {MANAGER_RECOVERING, "running"}
+    assert result.state.manager_state == MANAGER_RECOVERING
     assert result.state.server_pid == 8888
     assert result.restart_server is False
     assert result.restart_ngrok is False
@@ -174,6 +174,32 @@ def test_manager_reports_stopping_state_without_restarts(tmp_path: Path) -> None
         ngrok_healthy=True,
         public_url="https://steady.ngrok-free.app",
         ngrok_error=None,
+        stopping=True,
+    )
+    result = manager.orchestrate(previous_state=previous, snapshot=stopping_snapshot)
+
+    assert result.state.manager_state == MANAGER_STOPPING
+    assert result.restart_server is False
+    assert result.restart_ngrok is False
+
+
+def test_manager_stopping_takes_precedence_over_unhealthy_signals(tmp_path: Path) -> None:
+    manager = RuntimeManager(state_dir=tmp_path)
+    previous = RuntimeState(
+        manager_state="degraded",
+        server_pid=7002,
+        server_healthy=True,
+        ngrok_pid=8002,
+        ngrok_healthy=False,
+        public_url="https://steady.ngrok-free.app",
+        last_error="ngrok unstable",
+    )
+    stopping_snapshot = RuntimeManagerSnapshot(
+        server=ServerSnapshot(pid=7002, healthy=False),
+        ngrok_pid=8002,
+        ngrok_healthy=False,
+        public_url=None,
+        ngrok_error="stopping requested",
         stopping=True,
     )
     result = manager.orchestrate(previous_state=previous, snapshot=stopping_snapshot)

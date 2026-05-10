@@ -117,5 +117,26 @@ def test_runtime_state_record_public_url_tracks_previous_and_new() -> None:
     assert unchanged.previous_public_url == "https://old.ngrok-free.app"
 
 
+def test_runtime_state_record_public_url_keeps_last_known_on_missing_value() -> None:
+    initial = RuntimeState(
+        manager_state="running",
+        server_pid=11,
+        server_healthy=True,
+        ngrok_pid=21,
+        ngrok_healthy=True,
+        public_url="https://stable.ngrok-free.app",
+        previous_public_url=None,
+        last_error=None,
+    )
+    updated, change = record_public_url(initial, None)
+    spaced, spaced_change = record_public_url(initial, "   ")
+
+    assert updated.public_url == "https://stable.ngrok-free.app"
+    assert updated.previous_public_url is None
+    assert change is None
+    assert spaced.public_url == "https://stable.ngrok-free.app"
+    assert spaced_change is None
+
+
 def test_runtime_state_default_path_uses_state_dir(tmp_path: Path) -> None:
     assert default_state_path(tmp_path) == tmp_path / "runtime" / "state.json"
