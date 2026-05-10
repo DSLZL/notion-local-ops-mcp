@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import sys
 
-from .runtime_state import RuntimeState, default_state_path, record_public_url, save_state
+from .runtime_state import RuntimeState, default_state_path, load_state, record_public_url, save_state
 
 MANAGER_STARTING = "starting"
 MANAGER_RUNNING = "running"
@@ -105,3 +107,32 @@ def next_backoff_seconds(
     safe_max = max(0.0, max_seconds)
     raw = safe_base * (2 ** max(0, failures)) + max(0.0, jitter)
     return max(0.0, min(safe_max, raw))
+
+
+def _state_dir_from_env() -> Path:
+    return Path(
+        os.environ.get("NOTION_LOCAL_OPS_STATE_DIR", str(Path.home() / ".notion-local-ops-mcp"))
+    ).expanduser()
+
+
+def main(action: str | None = None) -> int:
+    requested = action or (sys.argv[1] if len(sys.argv) > 1 else "status")
+    if requested not in {"start", "reload", "status"}:
+        print(f"Invalid action: {requested}", file=sys.stderr)
+        return 1
+
+    if requested == "status":
+        state_path = default_state_path(_state_dir_from_env())
+        if not state_path.exists():
+            print("runtime-manager status manager_state=unknown")
+            return 0
+        state = load_state(state_path)
+        print(f"runtime-manager status manager_state={state.manager_state}")
+        return 0
+
+    print(f"runtime-manager {requested} action accepted")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

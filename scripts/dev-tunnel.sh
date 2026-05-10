@@ -35,9 +35,13 @@ EOF
 }
 
 pick_python() {
-  local candidate
+  local candidate version
   for candidate in "${PYTHON_BIN:-}" python3.11 python3 python; do
-    if [[ -n "${candidate}" ]] && command -v "${candidate}" >/dev/null 2>&1; then
+    if [[ -z "${candidate}" ]] || ! command -v "${candidate}" >/dev/null 2>&1; then
+      continue
+    fi
+    version="$("${candidate}" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || true)"
+    if [[ "${version}" =~ ^3\.([0-9]+)$ ]] && [[ "${BASH_REMATCH[1]}" -ge 11 ]]; then
       printf '%s\n' "${candidate}"
       return 0
     fi
@@ -61,11 +65,13 @@ if [[ "${ACTION}" == "--help" || "${ACTION}" == "-h" ]]; then
 fi
 
 if [[ $# -gt 1 ]]; then
+  echo "Invalid arguments: expected at most one action, got $#." >&2
   usage >&2
   exit 1
 fi
 
 if [[ "${ACTION}" != "start" && "${ACTION}" != "reload" && "${ACTION}" != "status" ]]; then
+  echo "Invalid action: ${ACTION}. Expected one of: start, reload, status." >&2
   usage >&2
   exit 1
 fi
