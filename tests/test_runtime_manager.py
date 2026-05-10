@@ -3,6 +3,7 @@ from pathlib import Path
 from notion_local_ops_mcp.runtime_manager import (
     MANAGER_DEGRADED,
     MANAGER_RECOVERING,
+    MANAGER_STOPPING,
     RuntimeManager,
     RuntimeManagerSnapshot,
     ServerSnapshot,
@@ -154,3 +155,29 @@ def test_next_backoff_seconds_clamps_negative_inputs() -> None:
         )
         == 1.0
     )
+
+
+def test_manager_reports_stopping_state_without_restarts(tmp_path: Path) -> None:
+    manager = RuntimeManager(state_dir=tmp_path)
+    previous = RuntimeState(
+        manager_state="running",
+        server_pid=7001,
+        server_healthy=True,
+        ngrok_pid=8001,
+        ngrok_healthy=True,
+        public_url="https://steady.ngrok-free.app",
+        last_error=None,
+    )
+    stopping_snapshot = RuntimeManagerSnapshot(
+        server=ServerSnapshot(pid=7001, healthy=True),
+        ngrok_pid=8001,
+        ngrok_healthy=True,
+        public_url="https://steady.ngrok-free.app",
+        ngrok_error=None,
+        stopping=True,
+    )
+    result = manager.orchestrate(previous_state=previous, snapshot=stopping_snapshot)
+
+    assert result.state.manager_state == MANAGER_STOPPING
+    assert result.restart_server is False
+    assert result.restart_ngrok is False

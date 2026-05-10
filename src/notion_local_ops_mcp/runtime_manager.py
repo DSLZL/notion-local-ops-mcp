@@ -25,6 +25,7 @@ class RuntimeManagerSnapshot:
     ngrok_healthy: bool
     public_url: str | None
     ngrok_error: str | None = None
+    stopping: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,9 @@ def _compute_manager_state(
     previous_state: RuntimeState | None,
     snapshot: RuntimeManagerSnapshot,
 ) -> tuple[str, bool, bool]:
+    if snapshot.stopping:
+        return MANAGER_STOPPING, False, False
+
     if not snapshot.server.healthy:
         return MANAGER_STARTING, True, False
 
