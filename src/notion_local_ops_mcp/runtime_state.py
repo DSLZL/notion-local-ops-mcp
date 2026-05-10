@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 
@@ -16,6 +16,7 @@ class RuntimeState:
     ngrok_healthy: bool
     public_url: str | None
     last_error: str | None
+    previous_public_url: str | None = None
 
 
 def _fsync_directory(path: Path) -> None:
@@ -30,6 +31,27 @@ def _fsync_directory(path: Path) -> None:
         pass
     finally:
         os.close(dir_fd)
+
+
+def default_state_path(state_dir: Path) -> Path:
+    return state_dir / "runtime" / "state.json"
+
+
+def record_public_url(state: RuntimeState, public_url: str | None) -> tuple[RuntimeState, str | None]:
+    next_url = public_url.strip() if isinstance(public_url, str) else None
+    if not next_url:
+        if state.public_url is None:
+            return state, None
+        return replace(state, public_url=None), None
+
+    if state.public_url == next_url:
+        return state, None
+
+    previous = state.public_url
+    updated = replace(state, public_url=next_url, previous_public_url=previous)
+    if previous is None:
+        return updated, None
+    return updated, f"{previous}->{next_url}"
 
 
 def save_state(path: Path, state: RuntimeState) -> None:

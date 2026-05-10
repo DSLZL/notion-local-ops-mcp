@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
-from notion_local_ops_mcp.runtime_state import RuntimeState, load_state, save_state
+from notion_local_ops_mcp.runtime_state import (
+    RuntimeState,
+    default_state_path,
+    load_state,
+    record_public_url,
+    save_state,
+)
 
 
 def test_runtime_state_roundtrip(tmp_path) -> None:
@@ -87,3 +94,28 @@ def test_runtime_state_failed_replace_preserves_existing(tmp_path, monkeypatch) 
         save_state(path, incoming)
 
     assert load_state(path) == original
+
+
+def test_runtime_state_record_public_url_tracks_previous_and_new() -> None:
+    initial = RuntimeState(
+        manager_state="running",
+        server_pid=10,
+        server_healthy=True,
+        ngrok_pid=20,
+        ngrok_healthy=True,
+        public_url="https://old.ngrok-free.app",
+        previous_public_url=None,
+        last_error=None,
+    )
+    updated, change = record_public_url(initial, "https://new.ngrok-free.app")
+    unchanged, unchanged_change = record_public_url(updated, "https://new.ngrok-free.app")
+
+    assert change == "https://old.ngrok-free.app->https://new.ngrok-free.app"
+    assert updated.previous_public_url == "https://old.ngrok-free.app"
+    assert updated.public_url == "https://new.ngrok-free.app"
+    assert unchanged_change is None
+    assert unchanged.previous_public_url == "https://old.ngrok-free.app"
+
+
+def test_runtime_state_default_path_uses_state_dir(tmp_path: Path) -> None:
+    assert default_state_path(tmp_path) == tmp_path / "runtime" / "state.json"
