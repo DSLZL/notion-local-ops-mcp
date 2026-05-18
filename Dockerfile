@@ -14,7 +14,7 @@ RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
 
 COPY --from=build /out/notion-local-ops-mcp /usr/local/bin/notion-local-ops-mcp
-COPY CTF ./CTF
+RUN mkdir -p /app/CTF && chown -R app:app /app
 
 ENV HOME=/tmp \
     NOTION_LOCAL_OPS_HOST=0.0.0.0 \

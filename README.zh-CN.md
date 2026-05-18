@@ -221,7 +221,7 @@ go run ./main.go
 
 ## 容器部署
 
-这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制和仓库内的 `CTF/` 目录，并以如下配置启动：
+这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制，并在容器内创建隔离的 `/app/CTF` 工作区，然后以如下配置启动：
 
 - `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
@@ -238,6 +238,7 @@ go run ./main.go
 
 - 命令只会在容器内执行
 - 不挂载宿主机目录
+- 默认工作目录就是容器内独立的 `/app/CTF`
 - 任务状态不持久化
 - 重启或重建容器后，运行态会全部还原
 

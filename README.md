@@ -221,7 +221,7 @@ Then open `http://127.0.0.1:8766/mcp` or run `./scripts/dev-tunnel.sh status`.
 
 ## Container Deployment
 
-This repo can run as a self-contained Docker container without ngrok. The container image copies only the MCP server binary plus the repo's `CTF/` directory, then starts the server with:
+This repo can run as a self-contained Docker container without ngrok. The container image copies only the MCP server binary and creates an isolated `/app/CTF` workspace inside the container, then starts the server with:
 
 - `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
@@ -238,6 +238,7 @@ That means:
 
 - commands execute only inside the container
 - no host files are mounted
+- the default workspace is the container-only `/app/CTF` directory
 - task state is ephemeral
 - restarting or recreating the container resets all runtime state
 
