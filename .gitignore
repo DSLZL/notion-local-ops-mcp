@@ -1,13 +1,13 @@
 .venv/
 .env
 .env.local
-cloudflared.local.yml
-cloudflared.local.yaml
-.pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.gocache/
+.tmp/
+notion-local-ops-mcp.exe
 *.log
 *.egg-info/
 .DS_Store
@@ -16,3 +16,7 @@ __pycache__/
 .claude/
 .spec-workflow/
 .serena/
+CTF/
+.codex/
+docs/
+.gocache-review/

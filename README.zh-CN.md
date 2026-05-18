@@ -2,472 +2,274 @@
 
 [English](./README.md)
 
-把 Notion 里的 **MCP Agent** 变成一个可操作本地文件、shell、git 和委托任务的 coding agent。
+把 Notion 里的 **MCP Agent** 变成一个可操作本地文件、shell、git 和长任务轮询的 coding agent。
 
 ![在本地仓库中工作的 MCP Agent](./assets/notion/notion-handoff-chat.png)
 
-## 这个项目做什么
+## 当前状态
 
-- 通过 MCP 暴露本地文件、shell、git 和 patch 式编辑能力
-- 让 MCP Agent 真正在本地仓库里工作，而不只是编辑 Notion 页面
-- 支持通过本地 `codex` 或 `claude` 委托长任务
+- 默认运行时已经切到仓库根目录的 Go 服务
+- `./scripts/dev-tunnel.sh` 现在负责 `go run ./main.go` + `ngrok`
+- 仓库现在只保留 Go MCP 运行时，不再依赖 Python 服务端
+- supervisor / launchd / cloudflared 已不再属于支持的运行路径
 
 ## 准备工作
 
-开始之前先装好下面这些工具。Windows 用户请在 **Git Bash** 或 **WSL** 里执行本文档中的所有命令，否则 `.sh` 脚本不会正常工作。
+Windows 用户请在 **Git Bash** 或 **WSL** 里执行本文档中的 shell 命令。
 
-| 工具 | 用途 | 检查是否安装 |
+| 工具 | 用途 | 检查 |
 | --- | --- | --- |
-| Python 3.11+ | 运行 MCP 服务 | `python --version` |
-| Git | 克隆本仓库 | `git --version` |
-| `cloudflared` | 把本地服务通过 HTTPS 暴露给 Notion | `cloudflared --version` |
+| Go | 运行默认 MCP 服务 | `go version` |
+| ngrok | 把本地 MCP 服务通过 HTTPS 暴露出去 | `ngrok version` |
+| Git | 克隆和管理仓库 | `git --version` |
 
-可选（只有在需要 `delegate_task` 把任务交给另一个 CLI agent 时才装）：
+## 快速开始
 
-- `codex` CLI — https://github.com/openai/codex
-- `claude` CLI — https://docs.anthropic.com/claude/docs/claude-cli
-
-另外还需要一个可以配置 **自定义 MCP Agent** 的 Notion 工作区。
-
-## 快速开始（5 步）
-
-### 1. 克隆仓库
+### 1. 克隆并配置
 
 ```bash
 git clone https://github.com/<your-account>/notion-local-ops-mcp.git
 cd notion-local-ops-mcp
-```
-
-### 2. 创建 `.env` 文件
-
-`.env` 用于存放你的本地密钥，已加入 gitignore，不会被提交。
-
-```bash
 cp .env.example .env
 ```
 
-用编辑器打开 `.env`，至少填好下面两个值：
-
-```bash
-# MCP agent 可以读写的目录的绝对路径。
-#   macOS / Linux 示例：      /Users/you/Code/my-project
-#   Windows Git Bash 示例：   /c/Users/you/Code/my-project
-NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
-
-# 一段长随机串，把它当密码对待 —— 之后要原样填到 Notion 里。
-# 提示：可以用 `openssl rand -hex 32` 生成。
-NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
-```
-
-### 3. 一条命令启动本地服务 + 公网 tunnel
-
-```bash
-./scripts/dev-tunnel.sh
-```
-
-首次运行时脚本会自动：
-
-- 在 `.venv/` 建立虚拟环境并安装 Python 依赖
-- 在 `http://127.0.0.1:8766/mcp` 启动 MCP 服务
-- 开一个 `cloudflared` quick tunnel，并打印出类似这样的公网 HTTPS 地址：
-
-```text
-https://random-words-1234.trycloudflare.com
-```
-
-**保持这个终端不要关。** 这个打印出来的地址就是 Notion 连接你电脑的入口，关终端就断了。
-
-### 4. 把地址填进 Notion MCP Agent
-
-在 Notion 里打开（或新建）一个 MCP Agent，添加自定义 MCP 服务，完全按下表填：
-
-| 字段 | 值 |
-| --- | --- |
-| URL | 把第 3 步打印出的 tunnel 地址后面补 `/mcp`，例如 `https://random-words-1234.trycloudflare.com/mcp` |
-| Auth type | `Bearer` |
-| Token | `.env` 里 `NOTION_LOCAL_OPS_AUTH_TOKEN` 的原样值 |
-
-保存。几秒钟后 Notion 应该会加载出工具列表。
-
-### 5. 粘贴 MCP Agent prompt
-
-把下一节的 prompt 复制进这个 MCP Agent 的 **prompt 框**（不是 Notion AI 指令页）。它会告诉 agent 怎么用这些本地工具。
-
-出问题请看下面的 [故障排查](#故障排查)。
-
-## MCP Agent Prompt
-
-把下面这段 prompt 粘贴到你的 MCP Agent 的 prompt 框里。
-
-<details>
-<summary><strong>推荐 MCP Agent prompt</strong></summary>
-
-```text
-You are a pragmatic local operations agent connected to my computer through MCP.
-
-Goals:
-- Complete file, code, shell, and task workflows end-to-end with minimal interruption.
-- Act more like a coding agent than a chat assistant.
-- Stay concise, direct, and outcome-focused.
-
-Disambiguation rules:
-- If the context contains local repo paths, filenames, code extensions, README, AGENTS.md, CLAUDE.md, or .cursorrules, treat "document", "file", "notes", "instructions", and "docs" as local files unless the user explicitly says Notion page, wiki, or workspace page.
-- If the user asks to edit AGENTS.md, CLAUDE.md, README, or project instructions inside the repo, edit the local file. Do not switch into self-configuration or setup behavior unless the user explicitly says to change the agent itself.
-- For local file edits, do not use <edit_reference>. That is for Notion page editing, not MCP file changes.
-- When answering code questions, prefer file paths, line references, function names, command output, or git diff over Notion-style citation footnotes.
-
-Working style:
-- First restate the goal in one sentence.
-- Default to the current workspace root unless the target path is genuinely ambiguous.
-- For non-trivial tasks, give a short plan and keep progress updated.
-- Prefer direct tools first. Use delegate_task only when direct tools are not enough.
-- Keep moving forward instead of asking for information that can be discovered via tools.
-- If the user says fix, change, implement, deploy, update, or similar imperative requests, execute directly instead of stopping after analysis.
-- If information is missing, probe with tools first. Use ask-survey only when tool probing still cannot resolve a decision and the next step is destructive or high-risk.
-
-Tool strategy:
-- list_skills: use when the user asks what skills are available in this repo or globally.
-- server_info: call first when troubleshooting connection/runtime mismatches.
-- set_default_cwd / get_default_cwd: set once for repeated repo operations instead of passing cwd every time.
-- In coding tasks, search the local repo first. Do not default to searching the Notion workspace.
-- apply_patch: 现有文件默认优先用它编辑，包括小改动、多 hunk 改动、移动、删除或一次 patch 里新增文件。每个 @@ hunk 都必须至少包含一行 '+' 或 '-'，并且必须在文件里唯一匹配。需要预检或预览时再用 dry_run=true / validate_only=true / return_diff=true。
-- write_file: create new files or rewrite short files when that is simpler than patching; use dry_run=true for no-write preview.
-- run_command_stream: start long-running shell jobs with immediate task_id return for polling progress. Prefer it for tests, installs, builds, compile steps, and other jobs that may take a while.
-- get_task / wait_task: check delegated task or background command status; prefer wait_task when blocking is useful.
-- run_command: proactively use for short non-destructive commands such as pwd, ls, rg, or small smoke checks.
-- search: canonical query tool. mode='glob' for path discovery, mode='regex' for regex/code search, mode='text' for literal substring search. Hidden entries and .gitignore'd paths are excluded by default; regex/text search can target a single file path directly.
-- list_files: inspect directory structure only when structure matters; paginate with limit and offset when needed.
-- read_text: canonical single/batch file reader with line-based pagination; set include_line_numbers=true when the result will be cited or reviewed line-by-line.
-- git_status / git_diff / git_commit / git_log / git_show / git_blame: use these as the default repository workflow and traceability tools only when the current cwd is actually inside a git repo.
-- delegate_task: use only for complex multi-file reasoning, long-running fallback execution, or repeated failed attempts with direct tools by local codex or claude-code. For non-trivial work, pass goal, acceptance_criteria, verification_commands, and commit_mode.
-- cancel_task: stop a delegated task if needed.
-- purge_tasks: garbage-collect stale task artifacts under STATE_DIR/tasks (dry_run first).
-
-Execution rules:
-- When exploring a codebase, prefer search(mode='glob' or 'regex') over broad list_files calls.
-- Follow the loop: probe, edit, verify, summarize.
-- Do the minimum necessary read/explore work before editing.
-- After each edit, re-read the changed section or run a minimal verification command when useful.
-- Prefer apply_patch for edits to existing files; reserve write_file for new files or full rewrites.
-- Do not issue parallel writes to the same file.
-- After a logically meaningful change, inspect git_status and git_diff, then create a small focused commit instead of waiting until the end.
-- Use focused commits. Do not mix unrelated changes in one commit.
-- Use clear commit messages, preferably conventional commit style such as fix, feat, docs, test, refactor, or chore.
-- For destructive actions such as deleting files, resetting changes, or dangerous shell commands, ask first.
-- If a command or delegated task fails, summarize the root cause and adjust the approach instead of retrying blindly.
-
-Verification rules:
-- After code changes, prefer this minimum verification ladder when applicable:
-- 1. Syntax or compile check such as cargo check, tsc --noEmit, python -m py_compile, or equivalent.
-- 2. Focused tests for the changed area, or the nearest relevant test target.
-- 3. Smoke test for the changed behavior, such as starting a service or running curl against the affected endpoint.
-- Do not skip verification unless the user explicitly says not to run it.
-
-Output style:
-- Before tool use, briefly say what you are about to do.
-- During longer tasks, send short progress updates.
-- At the end, summarize result, verification, and any remaining risk or next step.
-```
-
-</details>
-
-## 可选应用场景
-
-如果你还想使用 **Notion AI 页面级指令 + 项目管理** 这套工作流，见：
-
-- [Optional use case: Notion AI instruction page + project management](./docs/notion-use-case.md)
-- [可选应用场景：Notion AI 页面级指令 + 项目管理](./docs/notion-use-case.zh-CN.md)
-
-## 运行要求
-
-- Python 3.11+
-- FastMCP 3.x（`fastmcp>=3.2.4,<4`，由 `pyproject.toml` 安装）
-- `cloudflared`
-- 一个可在 Notion 中配置自定义 MCP 的 **MCP Agent**
-- 可选：`codex` CLI
-- 可选：`claude` CLI
-
-## 详细配置
-
-如果你想按完整步骤配置，可以走这条路径：
-
-```bash
-git clone https://github.com/<your-account>/notion-local-ops-mcp.git
-cd notion-local-ops-mcp
-
-cp .env.example .env
-```
-
-编辑 `.env`，至少设置：
+至少填写：
 
 ```bash
 NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
 NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
 ```
 
-然后运行：
+### 2. 启动本地服务和 ngrok tunnel
 
 ```bash
 ./scripts/dev-tunnel.sh
 ```
 
-你应该看到：
+脚本会：
 
-- 脚本创建或复用 `.venv`
-- 自动安装缺失或版本不匹配的 Python 依赖
-- 本地 MCP 服务通过一个平滑重载 supervisor 启动在 `http://127.0.0.1:8766/mcp`
-- 脚本会打印 `./scripts/dev-tunnel.sh reload`，用于不掉 tunnel 地重载本地服务
-- 优先使用 `cloudflared.local.yml` 命名 tunnel
-- 否则回退到 `cloudflared` quick tunnel，并打印公网 HTTPS 地址
+- 在 `http://127.0.0.1:8766/mcp` 启动 Go MCP 服务
+- 执行 `ngrok http http://127.0.0.1:8766`
+- tunnel 就绪后打印 `Public MCP URL: https://.../mcp`
 
-在 Notion 里配置时，使用这个输出地址并在后面补上 `/mcp`，同时使用 `NOTION_LOCAL_OPS_AUTH_TOKEN` 作为 Bearer token。
+连接 Notion 时，这个终端需要保持运行。
 
-### 1. 创建虚拟环境并安装
+### 3. 在 Notion 里配置 MCP Agent
 
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate         # Windows Git Bash：source .venv/Scripts/activate
-pip install -e ".[dev]"
-```
+- URL：`https://<你的-ngrok-域名>/mcp`
+- Auth type：`Bearer`
+- Token：`NOTION_LOCAL_OPS_AUTH_TOKEN`
 
-### 2. 创建并编辑 `.env`
+## 只运行 `main.go`
 
-和 [快速开始](#快速开始5-步) 第 2 步一样。必填项：
+如果你只想起本地服务，公网 tunnel 由自己管理：
 
 ```bash
-NOTION_LOCAL_OPS_WORKSPACE_ROOT="/absolute/path/to/workspace"
-NOTION_LOCAL_OPS_AUTH_TOKEN="replace-me"
+go run ./main.go
 ```
 
-可选项（完整列表见 [环境变量](#环境变量)）：
+现在 `go run ./main.go` 会从当前工作目录开始向上查找最近的 `.env` 并自动加载；`.env` 中已定义的值优先级高于同名 shell 环境变量。
 
-```bash
-NOTION_LOCAL_OPS_CODEX_COMMAND="codex"
-NOTION_LOCAL_OPS_CLAUDE_COMMAND="claude"
-NOTION_LOCAL_OPS_COMMAND_TIMEOUT="120"
-NOTION_LOCAL_OPS_DELEGATE_TIMEOUT="1800"
-NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS="30"
-NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX="com.notion-local-ops"
+PowerShell 示例：
+
+```powershell
+$env:NOTION_LOCAL_OPS_HOST='127.0.0.1'
+$env:NOTION_LOCAL_OPS_PORT='8766'
+$env:NOTION_LOCAL_OPS_WORKSPACE_ROOT='C:\absolute\path\to\workspace'
+$env:NOTION_LOCAL_OPS_STATE_DIR='C:\absolute\path\to\state-dir'
+$env:NOTION_LOCAL_OPS_AUTH_TOKEN='replace-me'
+go run .\main.go
 ```
 
-### 3. 前台启动 MCP 服务
+## `dev-tunnel.sh` 约定
 
-```bash
-source .venv/bin/activate
-notion-local-ops-mcp
-```
+支持的动作只有：
 
-本地地址：
+- `./scripts/dev-tunnel.sh`
+- `./scripts/dev-tunnel.sh start`
+- `./scripts/dev-tunnel.sh status`
 
-```text
-http://127.0.0.1:8766/mcp
-```
+`status` 会输出：
 
-## `./scripts/dev-tunnel.sh` 行为说明
+- 本地 MCP 端点是否可达
+- 当前 ngrok 公网 URL，如果 ngrok 本地 API 可访问
 
-用 [快速开始](#快速开始5-步) 的一键脚本时，有些细节知道一下就好：
-
-- 复用或创建 `.venv` 并安装缺失的运行时依赖
-- 如果存在 `.env`，自动从仓库根目录加载
-- 在平滑重载 supervisor 后面启动 `notion-local-ops-mcp`
-- 如果 `NOTION_LOCAL_OPS_WORKSPACE_ROOT` 未设置，脚本会默认使用仓库根目录
-- 如果 `NOTION_LOCAL_OPS_AUTH_TOKEN` 未设置，脚本会直接报错退出，而不是猜测
-- `.env` 和 `cloudflared.local.yml` 均已加入 gitignore，本地密钥和命名 tunnel 配置不会进 git
-- 如果存在 `cloudflared.local.yml` 或 `cloudflared.local.yaml`，优先使用；否则自动打开一个 `cloudflared` quick tunnel
-- 全新 clone 后**不需要**先手动执行 `pip install`
-
-## 不掉 Tunnel 的平滑重载
-
-当 `./scripts/dev-tunnel.sh` 已经在一个终端或 tmux pane 里跑起来后，可以在另一个 shell 执行：
-
-```bash
-./scripts/dev-tunnel.sh reload
-```
-
-这个命令会保持 `cloudflared` 仍然连在同一个本地端口上，同时 supervisor 先拉起新的 MCP 服务、确认 ready，再让旧进程进入 drain。调试代码时，推荐优先用它而不是直接把整条 tunnel 会话杀掉。
-
-### macOS 持久化 launchd 安装
-
-如果你的目标是“关掉 shell / tmux 之后也要继续跑”，就安装 launchd 版本：
-
-```bash
-./scripts/install-launchd.sh
-```
-
-它会安装：
-
-- 一个本地 MCP supervisor 的 LaunchAgent
-- 一个 `cloudflared tunnel run` 的 LaunchAgent
-- 一个 timer 型 LaunchAgent，每隔 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS`
-  秒执行一次 `launchd-doctor.sh --fix`
-- 两者退出后由 `launchd KeepAlive` 自动拉起
-- local `/mcp` 或 public `/mcp` 连续
-  `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD` 次检查失败时，只重启对应失败层
-- 重启使用指数退避：从 `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS`
-  开始，最大不超过 `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS`
-
-安装后常用命令：
-
-```bash
-./scripts/launchd-status.sh
-./scripts/launchd-doctor.sh         # 判断 local / public 哪层挂了
-./scripts/launchd-doctor.sh --fix   # 只重启失败层
-./scripts/launchd-reload.sh          # 代码更新后的平滑 reload
-./scripts/launchd-restart.sh mcp     # 依赖/环境变更后的 MCP 全量重启
-./scripts/launchd-restart.sh all     # MCP + cloudflared 一起重启
-./scripts/uninstall-launchd.sh
-```
-
-更新代码时的建议：
-
-- 仅 Python / 代码更新：`./scripts/launchd-reload.sh`
-- 依赖 / `.venv` / env 变更：如果依赖约束或 plist 环境可能过期，先重跑
-  `./scripts/install-launchd.sh`；否则用 `./scripts/launchd-restart.sh mcp`
-- tunnel 配置变更：`./scripts/launchd-restart.sh cloudflared`
-- watchdog 间隔变更：设置 `NOTION_LOCAL_OPS_WATCHDOG_INTERVAL_SECONDS` 后重跑
-  `./scripts/install-launchd.sh`
-- doctor / 退避参数变更：设置 `NOTION_LOCAL_OPS_DOCTOR_FAILURE_THRESHOLD`、
-  `NOTION_LOCAL_OPS_DOCTOR_BASE_BACKOFF_SECONDS` 或
-  `NOTION_LOCAL_OPS_DOCTOR_MAX_BACKOFF_SECONDS` 后重跑
-  `./scripts/install-launchd.sh`
-
-### 用 cloudflared 暴露服务
-
-#### Quick tunnel
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:8766
-```
-
-使用生成的 HTTPS 地址，并在后面补 `/mcp`。
-
-#### Named tunnel
-
-把 [`cloudflared-example.yml`](./cloudflared-example.yml) 复制成 `cloudflared.local.yml`，填入你的真实值，然后运行：
-
-```bash
-cp cloudflared-example.yml cloudflared.local.yml
-./scripts/dev-tunnel.sh
-```
-
-或者手动运行 cloudflared：
-
-```bash
-cloudflared tunnel --config ./cloudflared-example.yml run <your-tunnel-name>
-```
+不再支持 `reload`。
 
 ## 环境变量
 
-| 变量 | 必填 | 默认值 |
+核心运行时：
+
+| 变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `NOTION_LOCAL_OPS_HOST` | 否 | `127.0.0.1` |
-| `NOTION_LOCAL_OPS_PORT` | 否 | `8766` |
-| `NOTION_LOCAL_OPS_WORKSPACE_ROOT` | 是 | home directory |
-| `NOTION_LOCAL_OPS_STATE_DIR` | 否 | `~/.notion-local-ops-mcp` |
-| `NOTION_LOCAL_OPS_AUTH_TOKEN` | 否 | empty |
-| `NOTION_LOCAL_OPS_CLOUDFLARED_CONFIG` | 否 | empty |
-| `NOTION_LOCAL_OPS_TUNNEL_NAME` | 否 | empty |
-| `NOTION_LOCAL_OPS_CODEX_COMMAND` | 否 | `codex` |
-| `NOTION_LOCAL_OPS_CLAUDE_COMMAND` | 否 | `claude` |
-| `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | 否 | `120` |
-| `NOTION_LOCAL_OPS_DELEGATE_TIMEOUT` | 否 | `1800` |
-| `NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING` | 否 | `0` |
-| `NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS` | 否 | `30` |
-| `NOTION_LOCAL_OPS_LAUNCHD_LABEL_PREFIX` | 否 | `com.notion-local-ops` |
+| `NOTION_LOCAL_OPS_HOST` | `127.0.0.1` | 绑定地址 |
+| `NOTION_LOCAL_OPS_PORT` | `8766` | 绑定端口 |
+| `NOTION_LOCAL_OPS_WORKSPACE_ROOT` | `$HOME` | 相对路径锚点 |
+| `NOTION_LOCAL_OPS_STATE_DIR` | `~/.notion-local-ops-mcp` | 任务元数据目录 |
+| `NOTION_LOCAL_OPS_AUTH_TOKEN` | empty | Bearer token |
 
-## MCP 工具
+ngrok：
 
-- `list_files`：列出文件和目录并支持分页；默认排除隐藏/噪声目录并尊重 `.gitignore`
-- `list_skills`：发现项目级和全局 skills，并返回名称与简介
-- `search`：统一查询入口（glob 路径搜索 / regex 搜索 / literal 子串搜索）；默认排除隐藏项和 `.gitignore` 命中的路径，并支持对单文件直接做 regex/text 搜索
-- `read_text`：统一单文件/批量读取入口，支持按行分页（`start_line`/`line_limit`）、可选 `include_line_numbers` 和 `language` 提示
-- `write_file`：整文件写入，支持 `dry_run`
-- `apply_patch`：现有文件的默认编辑工具；使用 `*** Begin Patch` / `*** Update File` 文本语法，拒绝纯 context hunk，要求唯一 context 匹配，并返回每文件改动统计/警告
-- `server_info`：查看运行时配置与已注册工具清单
-- `set_default_cwd`：设置会话级默认工作目录
-- `get_default_cwd`：查看当前会话/生效工作目录
-- `git_status`：结构化仓库状态（仅在 cwd 位于 git 仓库内时使用）
-- `git_diff`：按文件分组的结构化 diff（含每文件独立截断）
-- `git_commit`：stage 指定路径或全部改动后创建 commit（支持 `amend` / `allow_empty` / `author` / `sign_off` / `dry_run`）
-- `git_log`：最近提交历史
-- `git_show`：查看指定 commit/ref 的元信息与逐文件 diff
-- `git_blame`：查看文件（可选行区间）的逐行 blame 元数据
-- `run_command`：运行本地 shell 命令，支持后台模式
-- `run_command_stream`：启动后台 shell 任务并通过 task 轮询进度；长测试 / build / install / compile 优先走它
-- `delegate_task`：把任务交给本地 `codex` 或 `claude-code`，支持 `goal`、`acceptance_criteria`、`verification_commands`、`commit_mode`
-- `get_task`：读取后台任务状态和输出尾部
-- `wait_task`：阻塞等待后台 shell 任务或委托任务完成或超时
-- `cancel_task`：停止后台 shell 任务或委托任务
-- `purge_tasks`：清理 `STATE_DIR/tasks` 下的旧任务产物（支持 `dry_run`）
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `NOTION_LOCAL_OPS_NGROK_COMMAND` | `ngrok` | ngrok CLI 路径 |
+| `NOTION_LOCAL_OPS_NGROK_AUTHTOKEN` | empty | 项目内的 ngrok token，会桥接到 `NGROK_AUTHTOKEN` |
+| `NOTION_LOCAL_OPS_NGROK_DOMAIN` | empty | 可选，保留域名 |
+| `NOTION_LOCAL_OPS_NGROK_REGION` | empty | 可选，ngrok region |
+| `NOTION_LOCAL_OPS_NGROK_API_URL` | `http://127.0.0.1:4040/api/tunnels` | `status` 用的本地 ngrok API |
 
-## 调试 Notion / MCP 握手卡住
+如果你机器上本来就有全局环境变量 `NGROK_AUTHTOKEN`，只有在 `.env` 没有定义 `NOTION_LOCAL_OPS_NGROK_AUTHTOKEN` 时，`./scripts/dev-tunnel.sh` 才会复用它；如果你希望把 token 放在当前仓库的 `.env` 里，就设置 `NOTION_LOCAL_OPS_NGROK_AUTHTOKEN`，脚本会在启动 ngrok 前把它导出成 `NGROK_AUTHTOKEN`。
 
-如果客户端显示已连接但卡在 initialize、tools/list 或 tool call，可开启 MCP 详细日志：
+任务 / shell：
 
-```bash
-NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING=1 ./scripts/dev-tunnel.sh
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | `120` | 前台 shell 超时秒数 |
+| `NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING` | `0` | MCP 请求调试日志 |
+
+如果你要用 ChatGPT Web OAuth，`.env.example` 里保留的 OAuth 变量依然有效，只需要把 `NOTION_LOCAL_OPS_PUBLIC_BASE_URL` 指到你的 ngrok HTTPS 地址。
+
+## 默认 Go 工具集
+
+现在默认 Go 运行时已经覆盖日常替代 Python 版所需的 MCP 工具面：
+
+- `server_info`
+- `list_skills`
+- `set_default_cwd`
+- `get_default_cwd`
+- `list_files`
+- `read_text`
+- `write_file`
+- `search`
+- `apply_patch`
+- `run_command`
+- `run_command_stream`
+- `wait_task`
+- `get_task`
+- `get_task_logs`
+- `cancel_task`
+- `purge_tasks`
+- `git_status`
+- `git_diff`
+- `git_commit`
+- `git_log`
+- `git_show`
+- `git_blame`
+
+仓库已经不再依赖 Python MCP 实现。
+
+## 长任务命令流
+
+短命令、希望在一次 MCP 请求里直接拿到结果时，用 `run_command`。
+
+耗时命令、需要轮询进度或日志时，用 `run_command_stream`。它会立刻返回 `task_id`，之后优先用 `wait_task`，不要高频忙轮询 `get_task`。
+
+推荐轮询流程：
+
+1. 先调用 `run_command_stream`，保存返回的 `task_id`。
+2. 调用 `wait_task`，并把上一次响应里的 `event_seq` 作为 `last_event_seq` 传回去。
+3. 如果任务仍在运行，就按 `recommended_poll_strategy` 和 `next_poll_after_seconds` 继续轮询。
+4. 需要完整任务快照时，再调用 `get_task`。
+5. 只有在需要看 stdout/stderr 细节时，才调用 `get_task_logs`。
+
+### 网页端长任务恢复
+
+在网页端实时对话里，长任务可能跨越当前轮次，甚至在这次对话结束后还没完成。面向用户的跟进优先使用 `await_task`，这样服务端会代替客户端持续等待，不需要在网页端反复做短周期 `wait_task` 轮询。
+
+如果当前对话已经结束，推荐按 `list_recent_tasks` -> `get_task` -> `await_task` -> `get_task_logs` 的顺序恢复。发给用户的后续提示里应包含 `resume_token` 或 `task_id`，方便下一轮继续接上同一个任务。
+
+`get_task_logs` 请求示例：
+
+```json
+{
+  "name": "get_task_logs",
+  "task_id": "task-123",
+  "stream": "stdout",
+  "offset": 0,
+  "limit": 4096
+}
 ```
 
-开启后，server log 会输出 `MCP_DEBUG` 行，包含：
+`get_task_logs` 会按 `offset` / `next_offset` / `truncated` 返回增量日志切片。某个流暂时没有日志文件时，会按“空日志但成功”处理，而不是直接报错。
 
-- HTTP method / path
-- session id 提示
-- JSON-RPC method
-- `tools/call` 的 tool 名
-- `tools/call.arguments` 的截断摘要
-- 响应状态码与耗时
+如果要取消任务，调用 `cancel_task` 并传入同一个 `task_id`。只有在执行确实被中断时，任务才会进入 `cancelled`。
+
+Python 脚本可以通过 stdout 输出结构化进度：
+
+```text
+MCP_PROGRESS {"percent": 25, "message": "正在扫描工作区"}
+MCP_PROGRESS {"percent": 80, "message": "正在聚合结果"}
+```
+
+Go runner 会解析这些行，并通过 `progress_percent`、`progress_message` 和 `event_seq` 对外暴露。
 
 ## 验证
 
-```bash
-source .venv/bin/activate
-pytest -q
-python -m compileall src tests
-```
-
-### 本地 MCP 调用模拟测试
-
-下面这组用例会本地模拟真实 MCP client/server 流程（initialize + call_tool + wait_task）：
+Go 侧测试：
 
 ```bash
-source .venv/bin/activate
-pytest -q tests/test_server_transport.py tests/test_concurrent_clients.py tests/test_mcp_local_simulation.py
+$env:GOCACHE=(Join-Path (Get-Location) '.gocache'); go test ./go/internal/tools ./go/internal/taskstore ./go/internal/mcp ./go/internal/app -count=1
 ```
+
+手动烟测：
+
+```bash
+go run ./main.go
+```
+
+然后访问 `http://127.0.0.1:8766/mcp`，或者执行 `./scripts/dev-tunnel.sh status`。
+
+## 容器部署
+
+这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制和仓库内的 `CTF/` 目录，并以如下配置启动：
+
+- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
+- `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
+- `HOME=/tmp`
+
+附带的 [`docker-compose.yml`](./docker-compose.yml) 还会设置：
+
+- `read_only: true`
+- `tmpfs: /tmp`
+- `cap_drop: [ALL]`
+- `no-new-privileges:true`
+
+这意味着：
+
+- 命令只会在容器内执行
+- 不挂载宿主机目录
+- 任务状态不持久化
+- 重启或重建容器后，运行态会全部还原
+
+构建并启动：
+
+```bash
+docker compose up --build -d
+```
+
+上线前请设置真实 Bearer Token：
+
+```yaml
+environment:
+  NOTION_LOCAL_OPS_AUTH_TOKEN: your-strong-token
+```
+
+服务端现在也会强制工作区约束：解析出的路径和 session cwd 不能逃出 `/app/CTF`，即使是绝对路径也会被拒绝。
 
 ## 故障排查
 
 ### Notion 提示无法连接
 
-- 确认 URL 以 `/mcp` 结尾
-- 确认鉴权类型是 `Bearer`
-- 确认 token 与 `NOTION_LOCAL_OPS_AUTH_TOKEN` 一致
-- 确认 `cloudflared` 仍在运行
-- 如果你已经安装了 macOS LaunchAgent，先跑 `./scripts/launchd-status.sh`
-- 如果你在用户连接期间需要更新服务，优先使用 `./scripts/dev-tunnel.sh reload` 或 `./scripts/launchd-reload.sh`，不要直接把整条 tunnel 会话杀掉
+- 确认 `./scripts/dev-tunnel.sh` 还在运行
+- 确认填进 Notion 的 URL 以 `/mcp` 结尾
+- 确认 Token 和 `NOTION_LOCAL_OPS_AUTH_TOKEN` 完全一致
 
-### 本地 `/mcp` 正常，但通过 tunnel 不通
+### 本地 MCP 通，公网 URL 不通
 
-- 优先改用 named tunnel 再试
-- 用真实 MCP client 验证 `/mcp`，例如：
+- 运行 `./scripts/dev-tunnel.sh status`
+- 确认 ngrok 仍在运行
+- 如果看到 `ngrok public URL: unavailable`，重启 tunnel
 
-```bash
-source .venv/bin/activate
-fastmcp list http://127.0.0.1:8766/mcp
-```
+### 8766 端口已被占用
 
-### 重启过程中 Notion 短暂看到 502
-
-- 重启时出现 Cloudflare 502，通常表示源站短暂不可用，不是 Cloudflare 在拦截
-- 如果这是在你手动杀 tmux pane 时发生的，改用 `./scripts/dev-tunnel.sh reload`，让 supervisor 以滚动替换方式重载服务
-- 查看最新的 `notion-local-ops-mcp-server.*.log`，确认新进程 ready 之后旧进程才开始 drain
-
-### 日志里反复出现 404
-
-- 如果 404 是 `GET /`，通常是配置 URL 时漏掉了结尾的 `/mcp`
-- 如果已经是 `/mcp` 仍出现 404/405，请升级到把 `/mcp` 改为 streamable HTTP 的版本
-
-### `delegate_task` 失败
-
-- 检查 `codex --help`
-- 检查 `claude --help`
-- 必要时设置 `NOTION_LOCAL_OPS_CODEX_COMMAND` 或 `NOTION_LOCAL_OPS_CLAUDE_COMMAND`
+先停掉已经绑定在 `NOTION_LOCAL_OPS_HOST:NOTION_LOCAL_OPS_PORT` 的旧进程，再重新启动。

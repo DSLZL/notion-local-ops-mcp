@@ -1,0 +1,16 @@
+.git
+.github
+.codex
+.gocache
+.tmp
+~
+.env
+.env.example
+docs
+assets
+uv.lock
+1.md
+*.log
+*.tmp
+go/.tmp
+go/.gocache
