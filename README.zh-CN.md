@@ -221,9 +221,9 @@ go run ./main.go
 
 ## 容器部署
 
-这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制，并在容器内创建隔离的 `/app/CTF` 工作区，然后以如下配置启动：
+这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像运行时已切换为 Kali，目标是把 MCP 服务放进受限的 CTF 工具容器里，而不是继续使用最小化 Alpine 基础镜像。为了把所有可写运行态统一收敛到一个临时区域，镜像仍然只复制 MCP 服务二进制，并以下列配置启动：
 
-- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
+- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
 - `HOME=/tmp`
 
@@ -233,14 +233,19 @@ go run ./main.go
 - `tmpfs: /tmp`
 - `cap_drop: [ALL]`
 - `no-new-privileges:true`
+- `pids_limit: 256`
+- `mem_limit: 2g`
+- `cpus: 2.0`
 
 这意味着：
 
 - 命令只会在容器内执行
 - 不挂载宿主机目录
-- 默认工作目录就是容器内独立的 `/app/CTF`
+- 默认工作目录就是容器内独立的 `/tmp`
 - 任务状态不持久化
 - 重启或重建容器后，运行态会全部还原
+- 继续使用 Docker 默认的 bridge 网络，而不是 host 网络
+- 镜像内预装了 Kali headless 工具集以及 `nmap`、`gdb`、`ffuf`、`sqlmap`、`pwntools` 等常用 CTF 工具
 
 构建并启动：
 
@@ -255,7 +260,7 @@ environment:
   NOTION_LOCAL_OPS_AUTH_TOKEN: your-strong-token
 ```
 
-服务端现在也会强制工作区约束：解析出的路径和 session cwd 不能逃出 `/app/CTF`，即使是绝对路径也会被拒绝。
+服务端现在也会强制工作区约束：解析出的路径和 session cwd 不能逃出 `/tmp`，即使是绝对路径也会被拒绝。
 
 ## 故障排查
 

@@ -3,11 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: notion-local-ops-mcp:local
+    image: notion-local-ops-mcp:kali
     container_name: notion-local-ops-mcp
     environment:
       NOTION_LOCAL_OPS_AUTH_TOKEN: change-me
-      NOTION_LOCAL_OPS_WORKSPACE_ROOT: /app/CTF
+      NOTION_LOCAL_OPS_WORKSPACE_ROOT: /tmp
       NOTION_LOCAL_OPS_STATE_DIR: /tmp/notion-local-ops-mcp
       NOTION_LOCAL_OPS_HOST: 0.0.0.0
       NOTION_LOCAL_OPS_PORT: "8766"
@@ -21,4 +21,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
     restart: unless-stopped

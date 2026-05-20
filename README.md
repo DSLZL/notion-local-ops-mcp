@@ -221,9 +221,9 @@ Then open `http://127.0.0.1:8766/mcp` or run `./scripts/dev-tunnel.sh status`.
 
 ## Container Deployment
 
-This repo can run as a self-contained Docker container without ngrok. The container image copies only the MCP server binary and creates an isolated `/app/CTF` workspace inside the container, then starts the server with:
+This repo can run as a self-contained Docker container without ngrok. The image now uses a Kali runtime so the MCP server runs inside a constrained CTF-oriented tool container instead of a minimal Alpine base. To keep writable state confined to one ephemeral location, the runtime starts with:
 
-- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
+- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
 - `HOME=/tmp`
 
@@ -233,14 +233,19 @@ The included [`docker-compose.yml`](./docker-compose.yml) also sets:
 - `tmpfs: /tmp`
 - `cap_drop: [ALL]`
 - `no-new-privileges:true`
+- `pids_limit: 256`
+- `mem_limit: 2g`
+- `cpus: 2.0`
 
 That means:
 
 - commands execute only inside the container
 - no host files are mounted
-- the default workspace is the container-only `/app/CTF` directory
+- the default workspace is the container-only `/tmp` directory
 - task state is ephemeral
 - restarting or recreating the container resets all runtime state
+- the runtime keeps Docker's default bridged network instead of `host` networking
+- the image includes Kali's headless toolchain plus common CTF utilities such as `nmap`, `gdb`, `ffuf`, `sqlmap`, and `pwntools`
 
 Build and run:
 
@@ -255,7 +260,7 @@ environment:
   NOTION_LOCAL_OPS_AUTH_TOKEN: your-strong-token
 ```
 
-The server now enforces workspace confinement for resolved paths and session cwd updates, so absolute paths outside `/app/CTF` are rejected instead of being followed.
+The server now enforces workspace confinement for resolved paths and session cwd updates, so absolute paths outside `/tmp` are rejected instead of being followed.
 
 ## Troubleshooting
 
