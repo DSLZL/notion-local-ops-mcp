@@ -98,6 +98,7 @@ var coreTools = []Tool{
 			stringProperty("cwd", "Optional relative working directory inside the workspace root."),
 			intProperty("timeout", "Optional timeout in seconds for foreground execution."),
 			boolProperty("run_in_background", "When true, queue the command as a pollable background task."),
+			stringProperty("stdin", "Optional text to feed to the command via standard input. Avoids heredoc escaping issues."),
 		),
 	},
 	{

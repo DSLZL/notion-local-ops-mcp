@@ -23,6 +23,7 @@ type Config struct {
 	CommandTimeout     int
 	DebugMCPLogging    bool
 	GracefulShutdown   int
+	ExtraWriteDirs     []string
 }
 
 func LoadFromEnv(env map[string]string) (Config, error) {
@@ -67,7 +68,25 @@ func loadFromEnv(env map[string]string, homeDir string) (Config, error) {
 		CommandTimeout:   lookupPositiveInt(env, "NOTION_LOCAL_OPS_COMMAND_TIMEOUT", 120),
 		DebugMCPLogging:  lookupBool(env, "NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING", false),
 		GracefulShutdown: lookupPositiveInt(env, "NOTION_LOCAL_OPS_GRACEFUL_SHUTDOWN_SECONDS", 30),
+		ExtraWriteDirs:   parseCommaSeparated(lookupString(env, "NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS", "")),
 	}, nil
+}
+
+// parseCommaSeparated splits a comma-separated string into trimmed, non-empty
+// path entries.
+func parseCommaSeparated(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 func normalizedAuthMode(value string) string {

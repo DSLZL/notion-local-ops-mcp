@@ -126,7 +126,7 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 			return nil, err
 		}
 		dryRun, _ := boolParam(params, "dry_run")
-		return toolSuccessResult(mustWriteFile(workspaceRoot, path, content, dryRun))
+		return toolSuccessResult(mustWriteFile(workspaceRoot, path, content, dryRun, cfg.ExtraWriteDirs))
 	case "search":
 		mode, _ := stringParam(params, "mode")
 		path, _ := stringParam(params, "path")
@@ -162,10 +162,11 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 		cwd, _ := stringParam(params, "cwd")
 		runInBackground, _ := boolParam(params, "run_in_background")
 		timeout, _ := intParam(params, "timeout")
+		stdinContent, _ := stringParam(params, "stdin")
 		if runInBackground {
 			return toolSuccessResult(tools.RunCommandStream(stateDir, workspaceRoot, commandText, cwd, timeout))
 		}
-		return toolSuccessResult(tools.RunCommand(workspaceRoot, commandText, cwd, timeout))
+		return toolSuccessResult(tools.RunCommand(workspaceRoot, commandText, cwd, stdinContent, timeout))
 	case "apply_patch":
 		patch, err := requiredStringParam(params, "patch")
 		if err != nil {
@@ -311,8 +312,8 @@ func toolNames() []string {
 	return names
 }
 
-func mustWriteFile(workspaceRoot, path, content string, dryRun bool) tools.WriteFileResult {
-	result, err := tools.WriteFile(workspaceRoot, path, content, dryRun)
+func mustWriteFile(workspaceRoot, path, content string, dryRun bool, extraWriteDirs []string) tools.WriteFileResult {
+	result, err := tools.WriteFile(workspaceRoot, path, content, dryRun, extraWriteDirs)
 	if err != nil {
 		return tools.WriteFileResult{
 			Success: false,

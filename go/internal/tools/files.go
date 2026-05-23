@@ -326,8 +326,8 @@ func readSingleText(workspace string, options ReadTextOptions) (ReadTextResult, 
 	}, nil
 }
 
-func WriteFile(workspace, input, content string, dryRun bool) (WriteFileResult, error) {
-	path, err := fsx.ResolvePath(workspace, input)
+func WriteFile(workspace, input, content string, dryRun bool, extraWriteDirs []string) (WriteFileResult, error) {
+	path, err := fsx.ResolveWritePath(workspace, input, extraWriteDirs)
 	if err != nil {
 		return WriteFileResult{}, err
 	}

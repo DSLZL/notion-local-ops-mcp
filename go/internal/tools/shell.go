@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"syscall"
 	"time"
 
 	"notion-local-ops-mcp-go/internal/fsx"
@@ -25,6 +28,9 @@ type TaskPollingResult struct {
 }
 
 const TimeoutExitCode = -1
+
+// GracePeriod is the time between SIGTERM and SIGKILL on timeout.
+const GracePeriod = 5 * time.Second
 
 type RunCommandResult struct {
 	Success  bool           `json:"success"`
@@ -75,7 +81,7 @@ func RunCommandStream(stateDir, workspace, commandText, cwd string, timeoutSecon
 	}
 }
 
-func RunCommand(workspace, commandText, cwd string, timeoutSeconds int) RunCommandResult {
+func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds int) RunCommandResult {
 	resolvedCWD, err := resolveCommandCWD(workspace, cwd)
 	if err != nil {
 		return commandPathErrorResult(commandText, resolvedCWD, "cwd_not_found", fmt.Sprintf("Working directory not found: %s", resolvedCWD))
@@ -97,34 +103,143 @@ func RunCommand(workspace, commandText, cwd string, timeoutSeconds int) RunComma
 		timeoutSeconds = 120
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	// Use a context without the built-in cancel-on-timeout kill so we can
+	// perform a graceful SIGTERM -> SIGKILL sequence ourselves.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, commandName, commandArgs...)
 	cmd.Dir = resolvedCWD
-	stdoutRaw, stdoutErr := cmd.Output()
-	stderrText := ""
-	if stdoutErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(stdoutErr, &exitErr) {
-			stderrText = string(exitErr.Stderr)
-		}
+	// Ensure the child process gets its own process group so we can signal the
+	// entire group on timeout.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// --- Pipe-based I/O so we always capture partial output ---
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return commandPathErrorResult(commandText, resolvedCWD, "pipe_error", err.Error())
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return commandPathErrorResult(commandText, resolvedCWD, "pipe_error", err.Error())
 	}
 
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+	// --- stdin support ---
+	if stdinContent != "" {
+		cmd.Stdin = strings.NewReader(stdinContent)
+	}
+
+	if err := cmd.Start(); err != nil {
 		return RunCommandResult{
 			Success:  false,
 			Command:  commandText,
 			CWD:      resolvedCWD,
 			ExitCode: TimeoutExitCode,
-			Stdout:   string(stdoutRaw),
-			Stderr:   stderrText,
+			Stderr:   err.Error(),
+			Error: map[string]any{
+				"code":    "command_start_failed",
+				"message": err.Error(),
+			},
+		}
+	}
+
+	// Drain pipes in background goroutines.
+	type pipeRead struct {
+		data []byte
+		err  error
+	}
+	stdoutCh := make(chan pipeRead, 1)
+	stderrCh := make(chan pipeRead, 1)
+	go func() {
+		data, readErr := io.ReadAll(stdoutPipe)
+		stdoutCh <- pipeRead{data, readErr}
+	}()
+	go func() {
+		data, readErr := io.ReadAll(stderrPipe)
+		stderrCh <- pipeRead{data, readErr}
+	}()
+
+	// --- Timeout with graceful shutdown ---
+	timer := time.NewTimer(time.Duration(timeoutSeconds) * time.Second)
+	defer timer.Stop()
+
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+	}()
+
+	timedOut := false
+	select {
+	case waitErr := <-waitDone:
+		// Command finished before timeout.
+		stdoutRead := <-stdoutCh
+		stderrRead := <-stderrCh
+		stdoutBuf.Write(stdoutRead.data)
+		stderrBuf.Write(stderrRead.data)
+
+		if waitErr == nil {
+			return RunCommandResult{
+				Success:  true,
+				Command:  commandText,
+				CWD:      resolvedCWD,
+				ExitCode: 0,
+				Stdout:   stdoutBuf.String(),
+				Stderr:   stderrBuf.String(),
+			}
+		}
+
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			return RunCommandResult{
+				Success:  false,
+				Command:  commandText,
+				CWD:      resolvedCWD,
+				ExitCode: exitErr.ExitCode(),
+				Stdout:   stdoutBuf.String(),
+				Stderr:   stderrBuf.String(),
+			}
+		}
+
+		return RunCommandResult{
+			Success:  false,
+			Command:  commandText,
+			CWD:      resolvedCWD,
+			ExitCode: TimeoutExitCode,
+			Stdout:   stdoutBuf.String(),
+			Stderr:   waitErr.Error(),
+			Error: map[string]any{
+				"code":    "command_start_failed",
+				"message": waitErr.Error(),
+			},
+		}
+
+	case <-timer.C:
+		// Timeout: graceful shutdown sequence.
+		timedOut = true
+		gracefulKill(cmd)
+		// Wait for the process to actually exit so pipes close.
+		<-waitDone
+		stdoutRead := <-stdoutCh
+		stderrRead := <-stderrCh
+		stdoutBuf.Write(stdoutRead.data)
+		stderrBuf.Write(stderrRead.data)
+	}
+
+	if timedOut {
+		return RunCommandResult{
+			Success:  false,
+			Command:  commandText,
+			CWD:      resolvedCWD,
+			ExitCode: TimeoutExitCode,
+			Stdout:   stdoutBuf.String(),
+			Stderr:   stderrBuf.String(),
 			TimedOut: true,
 			Timeout:  timeoutSeconds,
 			Error: map[string]any{
 				"code": "timed_out",
 				"message": fmt.Sprintf(
-					"Command exceeded the %ds timeout. Retry with a larger `timeout` argument, or set `run_in_background=true` to queue it as a task and poll with wait_task/get_task.",
+					"Command exceeded the %ds timeout. Partial output is preserved above. Retry with a larger `timeout` argument, or set `run_in_background=true` to queue it as a task and poll with wait_task/get_task.",
 					timeoutSeconds,
 				),
 			},
@@ -132,43 +247,44 @@ func RunCommand(workspace, commandText, cwd string, timeoutSeconds int) RunComma
 		}
 	}
 
-	if stdoutErr == nil {
-		return RunCommandResult{
-			Success:  true,
-			Command:  commandText,
-			CWD:      resolvedCWD,
-			ExitCode: 0,
-			Stdout:   string(stdoutRaw),
-			Stderr:   "",
-			TimedOut: false,
-		}
-	}
-
-	var exitErr *exec.ExitError
-	if errors.As(stdoutErr, &exitErr) {
-		return RunCommandResult{
-			Success:  false,
-			Command:  commandText,
-			CWD:      resolvedCWD,
-			ExitCode: exitErr.ExitCode(),
-			Stdout:   string(stdoutRaw),
-			Stderr:   string(exitErr.Stderr),
-			TimedOut: false,
-		}
-	}
-
+	// Should not reach here, but just in case.
 	return RunCommandResult{
-		Success:  false,
-		Command:  commandText,
-		CWD:      resolvedCWD,
-		ExitCode: TimeoutExitCode,
-		Stdout:   string(stdoutRaw),
-		Stderr:   stdoutErr.Error(),
-		TimedOut: false,
-		Error: map[string]any{
-			"code":    "command_start_failed",
-			"message": stdoutErr.Error(),
-		},
+		Success: false,
+		Command: commandText,
+		CWD:     resolvedCWD,
+	}
+}
+
+// gracefulKill sends SIGTERM to the process group, waits GracePeriod, then
+// sends SIGKILL if the process has not exited.
+func gracefulKill(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+	// Send SIGTERM to the entire process group.
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+
+	// Give the process a grace period to clean up.
+	done := make(chan struct{})
+	go func() {
+		// cmd.Wait() may have already been called, so we just poll ProcessState.
+		for i := 0; i < 50; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if cmd.ProcessState != nil {
+				close(done)
+				return
+			}
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Process exited gracefully.
+	case <-time.After(GracePeriod):
+		// Force kill.
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 }
 

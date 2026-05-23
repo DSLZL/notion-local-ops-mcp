@@ -13,6 +13,14 @@ RUN apk add --no-cache \
     py3-pip \
     openjdk8-jdk \
     openjdk21-jdk \
+    bash \
+    curl \
+    git \
+    openssl \
+    socat \
+    nmap \
+    xxd \
+    netcat-openbsd \
  && addgroup -S app \
  && adduser -S -G app app \
  && ln -sf /usr/lib/jvm/java-1.8-openjdk/bin/java /usr/local/bin/java8 \
