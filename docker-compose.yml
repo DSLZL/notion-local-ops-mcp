@@ -7,11 +7,10 @@ services:
     container_name: notion-local-ops-mcp
     environment:
       NOTION_LOCAL_OPS_AUTH_TOKEN: change-me
-      NOTION_LOCAL_OPS_WORKSPACE_ROOT: /app/CTF
+      NOTION_LOCAL_OPS_WORKSPACE_ROOT: /tmp
       NOTION_LOCAL_OPS_STATE_DIR: /tmp/notion-local-ops-mcp
       NOTION_LOCAL_OPS_HOST: 0.0.0.0
       NOTION_LOCAL_OPS_PORT: "8766"
-      NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS: "/tmp"
       HOME: /tmp
     ports:
       - "8766:8766"

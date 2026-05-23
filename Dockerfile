@@ -30,10 +30,9 @@ RUN apk add --no-cache \
  && ln -sf /usr/lib/jvm/java-21-openjdk/bin/java /usr/local/bin/java \
  && ln -sf /usr/lib/jvm/java-21-openjdk/bin/javac /usr/local/bin/javac
 
-WORKDIR /app
+WORKDIR /tmp
 
 COPY --from=build /out/notion-local-ops-mcp /usr/local/bin/notion-local-ops-mcp
-RUN mkdir -p /app/CTF && chown -R app:app /app
 
 ENV HOME=/tmp \
     JAVA8_HOME=/usr/lib/jvm/java-1.8-openjdk \
@@ -41,7 +40,7 @@ ENV HOME=/tmp \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
     NOTION_LOCAL_OPS_HOST=0.0.0.0 \
     NOTION_LOCAL_OPS_PORT=8766 \
-    NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF \
+    NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp \
     NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp \
     NOTION_LOCAL_OPS_COMMAND_TIMEOUT=120
 
