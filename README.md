@@ -126,6 +126,7 @@ Task / shell behavior:
 | --- | --- | --- |
 | `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | `120` | foreground shell timeout in seconds |
 | `NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING` | `0` | verbose MCP request logging |
+| `NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS` | empty | extra writable directories, useful for container `/tmp` workflows |
 
 OAuth-related variables in `.env.example` still apply if you need ChatGPT web OAuth mode. Use an HTTPS public base URL that matches your ngrok endpoint.
 
@@ -144,6 +145,11 @@ The default Go runtime now covers the everyday MCP surface that the old Python r
 - `apply_patch`
 - `run_command`
 - `run_command_stream`
+- `open_shell_session`
+- `get_shell_session`
+- `send_shell_input`
+- `read_shell_output`
+- `close_shell_session`
 - `wait_task`
 - `get_task`
 - `get_task_logs`
@@ -157,6 +163,24 @@ The default Go runtime now covers the everyday MCP surface that the old Python r
 - `git_blame`
 
 The repository no longer depends on a Python MCP implementation.
+
+## Persistent Shell Sessions
+
+Phase 1 adds a Linux-first PTY-backed shell session flow for stateful interactive work:
+
+1. `open_shell_session` opens a persistent shell under the resolved workspace cwd.
+2. `send_shell_input` writes commands into that PTY.
+3. `read_shell_output` reads persisted output incrementally with `offset` / `next_offset`.
+4. `get_shell_session` returns the stored session metadata and whether the session is still active.
+5. `close_shell_session` terminates the PTY and marks the session closed.
+
+This is intended to cover workflows that previously needed a long-lived terminal state, such as repeated `cd`, exported environment variables, REPLs, `nc`, `socat`, Python, or exploit tooling.
+
+Current Phase 1 limits:
+
+- fully supported only on Linux/container runtime
+- non-Linux platforms return an explicit unsupported error
+- sessions are separate from background tasks and persist under `STATE_DIR/sessions`
 
 ## Long-running Commands
 
@@ -239,9 +263,9 @@ Then open `http://127.0.0.1:8766/mcp` or run `./scripts/dev-tunnel.sh status`.
 
 ## Container Deployment
 
-This repo can run as a self-contained Docker container without ngrok. The container image copies only the MCP server binary and creates an isolated `/app/CTF` workspace inside the container, then starts the server with:
+This repo can run as a self-contained Docker container without ngrok. The container image copies only the MCP server binary and uses `/tmp` as the default in-container workspace, then starts the server with:
 
-- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
+- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
 - `HOME=/tmp`
 
@@ -249,6 +273,7 @@ The included [`docker-compose.yml`](./docker-compose.yml) also sets:
 
 - `read_only: true`
 - `tmpfs: /tmp`
+- `NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS=/tmp`
 - `cap_drop: [ALL]`
 - `no-new-privileges:true`
 
@@ -256,9 +281,19 @@ That means:
 
 - commands execute only inside the container
 - no host files are mounted
-- the default workspace is the container-only `/app/CTF` directory
+- the default workspace is the container-local `/tmp` directory
+- `/tmp` stays executable for PTY shells and scratch tooling
 - task state is ephemeral
 - restarting or recreating the container resets all runtime state
+
+Phase 1 runtime image also includes a minimal practical CTF baseline:
+
+- `file`
+- `strings` / `objdump` / `readelf` via `binutils`
+- `gdb`
+- Python packaging support
+- `pwntools`
+- `ROPGadget`
 
 Build and run:
 
@@ -273,7 +308,7 @@ environment:
   NOTION_LOCAL_OPS_AUTH_TOKEN: your-strong-token
 ```
 
-The server now enforces workspace confinement for resolved paths and session cwd updates, so absolute paths outside `/app/CTF` are rejected instead of being followed.
+The server now enforces workspace confinement for resolved paths and session cwd updates, so absolute paths outside the configured workspace root are rejected instead of being followed.
 
 ## Troubleshooting
 

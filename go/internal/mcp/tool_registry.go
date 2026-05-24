@@ -112,6 +112,45 @@ var coreTools = []Tool{
 		),
 	},
 	{
+		Name:        "open_shell_session",
+		Description: "Open a persistent PTY-backed shell session for stateful interactive work.",
+		InputSchema: objectSchema(
+			stringProperty("cwd", "Optional relative working directory inside the workspace root."),
+			stringProperty("shell", "Optional shell binary to launch. Defaults to bash on Linux."),
+		),
+	},
+	{
+		Name:        "get_shell_session",
+		Description: "Return persisted metadata and active-state information for a shell session.",
+		InputSchema: requiredObjectSchema([]string{"session_id"},
+			stringProperty("session_id", "Shell session id returned by open_shell_session."),
+		),
+	},
+	{
+		Name:        "send_shell_input",
+		Description: "Send raw input into an existing persistent shell session.",
+		InputSchema: requiredObjectSchema([]string{"session_id", "input"},
+			stringProperty("session_id", "Shell session id returned by open_shell_session."),
+			stringProperty("input", "Raw shell input to write into the PTY, including trailing newline when needed."),
+		),
+	},
+	{
+		Name:        "read_shell_output",
+		Description: "Read persisted shell-session output incrementally using offset and limit.",
+		InputSchema: requiredObjectSchema([]string{"session_id"},
+			stringProperty("session_id", "Shell session id returned by open_shell_session."),
+			intProperty("offset", "Optional byte offset to start reading from."),
+			intProperty("limit", "Optional maximum byte count to return."),
+		),
+	},
+	{
+		Name:        "close_shell_session",
+		Description: "Terminate a persistent shell session and mark it closed.",
+		InputSchema: requiredObjectSchema([]string{"session_id"},
+			stringProperty("session_id", "Shell session id returned by open_shell_session."),
+		),
+	},
+	{
 		Name:        "wait_task",
 		Description: "Long-poll a background task until it reaches a terminal state or a newer event_seq is available.",
 		InputSchema: requiredObjectSchema(

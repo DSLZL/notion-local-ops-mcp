@@ -126,6 +126,7 @@ ngrok：
 | --- | --- | --- |
 | `NOTION_LOCAL_OPS_COMMAND_TIMEOUT` | `120` | 前台 shell 超时秒数 |
 | `NOTION_LOCAL_OPS_DEBUG_MCP_LOGGING` | `0` | MCP 请求调试日志 |
+| `NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS` | empty | 额外允许写入的目录，容器里常用于 `/tmp` |
 
 如果你要用 ChatGPT Web OAuth，`.env.example` 里保留的 OAuth 变量依然有效，只需要把 `NOTION_LOCAL_OPS_PUBLIC_BASE_URL` 指到你的 ngrok HTTPS 地址。
 
@@ -144,6 +145,11 @@ ngrok：
 - `apply_patch`
 - `run_command`
 - `run_command_stream`
+- `open_shell_session`
+- `get_shell_session`
+- `send_shell_input`
+- `read_shell_output`
+- `close_shell_session`
 - `wait_task`
 - `get_task`
 - `get_task_logs`
@@ -157,6 +163,24 @@ ngrok：
 - `git_blame`
 
 仓库已经不再依赖 Python MCP 实现。
+
+## 持久 Shell Session
+
+Phase 1 新增了 Linux 优先的 PTY 持久 shell session，用来覆盖需要保持终端状态的交互式流程：
+
+1. `open_shell_session` 在解析后的工作目录中启动持久 shell。
+2. `send_shell_input` 向该 PTY 写入命令。
+3. `read_shell_output` 通过 `offset` / `next_offset` 增量读取持久化输出。
+4. `get_shell_session` 返回会话元数据和当前是否仍然 active。
+5. `close_shell_session` 终止 PTY 并把会话标记为 closed。
+
+适合的场景包括：多次 `cd`、导出环境变量、REPL、`nc`、`socat`、Python、以及利用脚本等需要保留上下文的工作流。
+
+当前 Phase 1 限制：
+
+- 只在 Linux / 容器运行时完整支持
+- 非 Linux 平台会明确返回 unsupported 错误
+- session 与 background task 分开存储，状态落在 `STATE_DIR/sessions`
 
 ## 长任务命令流
 
@@ -239,9 +263,9 @@ go run ./main.go
 
 ## 容器部署
 
-这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制，并在容器内创建隔离的 `/app/CTF` 工作区，然后以如下配置启动：
+这个仓库现在可以直接打包成 Docker 容器运行，不再依赖 ngrok。镜像里只会复制 MCP 服务二进制，并把容器内默认工作区设置为 `/tmp`，然后以如下配置启动：
 
-- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/app/CTF`
+- `NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp`
 - `NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp`
 - `HOME=/tmp`
 
@@ -249,6 +273,7 @@ go run ./main.go
 
 - `read_only: true`
 - `tmpfs: /tmp`
+- `NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS=/tmp`
 - `cap_drop: [ALL]`
 - `no-new-privileges:true`
 
@@ -256,9 +281,19 @@ go run ./main.go
 
 - 命令只会在容器内执行
 - 不挂载宿主机目录
-- 默认工作目录就是容器内独立的 `/app/CTF`
+- 默认工作目录就是容器内本地的 `/tmp`
+- `/tmp` 保持可执行，便于 PTY shell 和临时工具链使用
 - 任务状态不持久化
 - 重启或重建容器后，运行态会全部还原
+
+Phase 1 运行时镜像还补上了最小可用的 CTF 工具链基线：
+
+- `file`
+- `strings` / `objdump` / `readelf`（来自 `binutils`）
+- `gdb`
+- Python 打包支持
+- `pwntools`
+- `ROPGadget`
 
 构建并启动：
 
@@ -273,7 +308,7 @@ environment:
   NOTION_LOCAL_OPS_AUTH_TOKEN: your-strong-token
 ```
 
-服务端现在也会强制工作区约束：解析出的路径和 session cwd 不能逃出 `/app/CTF`，即使是绝对路径也会被拒绝。
+服务端现在也会强制工作区约束：解析出的路径和 session cwd 不能逃出当前配置的 workspace root，即使是绝对路径也会被拒绝。
 
 ## 故障排查
 

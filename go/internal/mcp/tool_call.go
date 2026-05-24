@@ -187,6 +187,63 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 		cwd, _ := stringParam(params, "cwd")
 		timeout, _ := intParam(params, "timeout")
 		return toolSuccessResult(tools.RunCommandStream(stateDir, workspaceRoot, commandText, cwd, timeout))
+	case "open_shell_session":
+		cwd, _ := stringParam(params, "cwd")
+		shell, _ := stringParam(params, "shell")
+		result, err := tools.OpenShellSession(stateDir, workspaceRoot, tools.OpenShellSessionOptions{
+			CWD:   cwd,
+			Shell: shell,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "get_shell_session":
+		sessionID, err := requiredStringParam(params, "session_id")
+		if err != nil {
+			return nil, err
+		}
+		result, err := tools.GetShellSession(stateDir, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "send_shell_input":
+		sessionID, err := requiredStringParam(params, "session_id")
+		if err != nil {
+			return nil, err
+		}
+		input, err := requiredStringParam(params, "input")
+		if err != nil {
+			return nil, err
+		}
+		result, err := tools.SendShellInput(stateDir, sessionID, input)
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "read_shell_output":
+		sessionID, err := requiredStringParam(params, "session_id")
+		if err != nil {
+			return nil, err
+		}
+		offset, _ := intParam(params, "offset")
+		limit, _ := intParam(params, "limit")
+		result, err := tools.ReadShellOutput(stateDir, sessionID, int64(offset), int64(limit))
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "close_shell_session":
+		sessionID, err := requiredStringParam(params, "session_id")
+		if err != nil {
+			return nil, err
+		}
+		result, err := tools.CloseShellSession(stateDir, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
 	case "wait_task":
 		taskID, err := requiredStringParam(params, "task_id")
 		if err != nil {

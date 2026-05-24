@@ -9,6 +9,7 @@ services:
       NOTION_LOCAL_OPS_AUTH_TOKEN: change-me
       NOTION_LOCAL_OPS_WORKSPACE_ROOT: /tmp
       NOTION_LOCAL_OPS_STATE_DIR: /tmp/notion-local-ops-mcp
+      NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS: /tmp
       NOTION_LOCAL_OPS_HOST: 0.0.0.0
       NOTION_LOCAL_OPS_PORT: "8766"
       HOME: /tmp

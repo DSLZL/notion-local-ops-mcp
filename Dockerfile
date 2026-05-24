@@ -11,6 +11,10 @@ FROM alpine:3.22
 RUN apk add --no-cache \
     python3 \
     py3-pip \
+    py3-setuptools \
+    py3-wheel \
+    python3-dev \
+    build-base \
     openjdk8-jdk \
     openjdk21-jdk \
     bash \
@@ -21,6 +25,10 @@ RUN apk add --no-cache \
     nmap \
     xxd \
     netcat-openbsd \
+    file \
+    binutils \
+    gdb \
+ && python3 -m pip install --no-cache-dir --break-system-packages pwntools ROPGadget \
  && addgroup -S app \
  && adduser -S -G app app \
  && ln -sf /usr/lib/jvm/java-1.8-openjdk/bin/java /usr/local/bin/java8 \
@@ -42,7 +50,8 @@ ENV HOME=/tmp \
     NOTION_LOCAL_OPS_PORT=8766 \
     NOTION_LOCAL_OPS_WORKSPACE_ROOT=/tmp \
     NOTION_LOCAL_OPS_STATE_DIR=/tmp/notion-local-ops-mcp \
-    NOTION_LOCAL_OPS_COMMAND_TIMEOUT=120
+    NOTION_LOCAL_OPS_COMMAND_TIMEOUT=120 \
+    NOTION_LOCAL_OPS_EXTRA_WRITE_DIRS=/tmp
 
 USER app
 
