@@ -1199,8 +1199,14 @@ func TestToolsCallAwaitTaskOverMCPRouteWaitsForEventAfterLastEventSeq(t *testing
 	if payload.Result.StructuredContent.ProgressMessage != "still working" {
 		t.Fatalf("progress_message = %q, want still working", payload.Result.StructuredContent.ProgressMessage)
 	}
-	if payload.Result.StructuredContent.Summary != "updated summary" {
-		t.Fatalf("summary = %q, want updated summary", payload.Result.StructuredContent.Summary)
+	if !strings.Contains(payload.Result.StructuredContent.Summary, "task running; use wait_task") {
+		t.Fatalf("summary = %q, want running wait_task guidance", payload.Result.StructuredContent.Summary)
+	}
+	if !strings.Contains(payload.Result.StructuredContent.Summary, "get_task_logs") {
+		t.Fatalf("summary = %q, want get_task_logs guidance", payload.Result.StructuredContent.Summary)
+	}
+	if !strings.Contains(payload.Result.StructuredContent.Summary, "still working") {
+		t.Fatalf("summary = %q, want progress hint", payload.Result.StructuredContent.Summary)
 	}
 	if payload.Result.StructuredContent.RecommendedNextAction != "await_task" {
 		t.Fatalf("recommended_next_action = %q, want await_task", payload.Result.StructuredContent.RecommendedNextAction)

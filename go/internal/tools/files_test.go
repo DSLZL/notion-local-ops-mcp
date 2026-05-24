@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"notion-local-ops-mcp-go/internal/fsx"
@@ -231,7 +233,7 @@ func TestReadTextRejectsWorkspaceEscape(t *testing.T) {
 func TestWriteFileSupportsDryRunAndRealWrite(t *testing.T) {
 	workspace := t.TempDir()
 
-	dryRun, err := WriteFile(workspace, "notes/demo.txt", "hello", true)
+	dryRun, err := WriteFile(workspace, "notes/demo.txt", "hello", true, nil)
 	if err != nil {
 		t.Fatalf("WriteFile() dry run error = %v", err)
 	}
@@ -242,7 +244,7 @@ func TestWriteFileSupportsDryRunAndRealWrite(t *testing.T) {
 		t.Fatalf("dry run should not create file, stat error = %v", err)
 	}
 
-	result, err := WriteFile(workspace, "notes/demo.txt", "hello", false)
+	result, err := WriteFile(workspace, "notes/demo.txt", "hello", false, nil)
 	if err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
@@ -255,5 +257,96 @@ func TestWriteFileSupportsDryRunAndRealWrite(t *testing.T) {
 	}
 	if string(content) != "hello" {
 		t.Fatalf("content = %q, want hello", string(content))
+	}
+}
+
+func TestWriteFileWithOptionsSupportsBase64Content(t *testing.T) {
+	workspace := t.TempDir()
+	raw := []byte{0x00, 0x01, 0x02, 0x0a, 0xff}
+	encoded := base64.StdEncoding.EncodeToString(raw)
+
+	result, err := WriteFileWithOptions(workspace, WriteFileOptions{
+		Path:          "notes/blob.bin",
+		ContentBase64: &encoded,
+	}, nil)
+	if err != nil {
+		t.Fatalf("WriteFileWithOptions() error = %v", err)
+	}
+	if !result.Success || result.DryRun {
+		t.Fatalf("result = %+v, want successful real write", result)
+	}
+	if result.Bytes != len(raw) {
+		t.Fatalf("bytes = %d, want %d", result.Bytes, len(raw))
+	}
+
+	written, err := os.ReadFile(filepath.Join(workspace, "notes", "blob.bin"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if len(written) != len(raw) {
+		t.Fatalf("len(content) = %d, want %d", len(written), len(raw))
+	}
+	for i := range raw {
+		if written[i] != raw[i] {
+			t.Fatalf("content[%d] = %d, want %d", i, written[i], raw[i])
+		}
+	}
+}
+
+func TestWriteFileWithOptionsBase64DryRun(t *testing.T) {
+	workspace := t.TempDir()
+	encoded := base64.StdEncoding.EncodeToString([]byte{0x01, 0x02, 0x03})
+
+	result, err := WriteFileWithOptions(workspace, WriteFileOptions{
+		Path:          "notes/dry.bin",
+		ContentBase64: &encoded,
+		DryRun:        true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("WriteFileWithOptions() dry run error = %v", err)
+	}
+	if !result.Success || !result.DryRun {
+		t.Fatalf("result = %+v, want successful dry run", result)
+	}
+	if result.Bytes != 3 {
+		t.Fatalf("bytes = %d, want 3", result.Bytes)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "notes", "dry.bin")); !os.IsNotExist(err) {
+		t.Fatalf("dry run should not create file, stat error = %v", err)
+	}
+}
+
+func TestWriteFileWithOptionsValidatesContentFields(t *testing.T) {
+	workspace := t.TempDir()
+	plain := "hello"
+	encoded := base64.StdEncoding.EncodeToString([]byte("hello"))
+
+	_, err := WriteFileWithOptions(workspace, WriteFileOptions{
+		Path:          "notes/conflict.txt",
+		Content:       &plain,
+		ContentBase64: &encoded,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "exactly one of content or content_base64") {
+		t.Fatalf("conflict error = %v, want content field validation error", err)
+	}
+
+	_, err = WriteFileWithOptions(workspace, WriteFileOptions{
+		Path: "notes/missing.txt",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "exactly one of content or content_base64") {
+		t.Fatalf("missing error = %v, want content field validation error", err)
+	}
+}
+
+func TestWriteFileWithOptionsRejectsMalformedBase64(t *testing.T) {
+	workspace := t.TempDir()
+	invalid := "%%%not-base64%%%"
+
+	_, err := WriteFileWithOptions(workspace, WriteFileOptions{
+		Path:          "notes/bad.bin",
+		ContentBase64: &invalid,
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "decode content_base64") {
+		t.Fatalf("error = %v, want decode-specific error", err)
 	}
 }

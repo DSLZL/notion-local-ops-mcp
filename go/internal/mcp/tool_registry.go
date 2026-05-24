@@ -60,10 +60,11 @@ var coreTools = []Tool{
 	},
 	{
 		Name:        "write_file",
-		Description: "Write full content to a file with optional dry-run validation.",
-		InputSchema: requiredObjectSchema([]string{"path", "content"},
+		Description: "Write full content to a file with optional dry-run validation. Provide exactly one of content or content_base64.",
+		InputSchema: requiredObjectSchema([]string{"path"},
 			stringProperty("path", "Relative file path inside the workspace root."),
-			stringProperty("content", "Full file content to write."),
+			stringProperty("content", "Full text content to write."),
+			stringProperty("content_base64", "Optional base64-encoded bytes to decode server-side and write byte-for-byte."),
 			boolProperty("dry_run", "When true, validate without touching disk."),
 		),
 	},
@@ -99,6 +100,7 @@ var coreTools = []Tool{
 			intProperty("timeout", "Optional timeout in seconds for foreground execution."),
 			boolProperty("run_in_background", "When true, queue the command as a pollable background task."),
 			stringProperty("stdin", "Optional text to feed to the command via standard input. Avoids heredoc escaping issues."),
+			stringProperty("stdin_content", "Alias of stdin for clients that prefer an explicit request-side content field name."),
 		),
 	},
 	{

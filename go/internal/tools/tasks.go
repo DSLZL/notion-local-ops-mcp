@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"fmt"
 	"notion-local-ops-mcp-go/internal/taskrunner"
 	"notion-local-ops-mcp-go/internal/taskstore"
+	"strings"
 	"time"
 )
 
@@ -93,7 +95,7 @@ func WaitTask(stateDir, taskID string, timeoutSeconds int, lastEventSeq int64) T
 			return current
 		}
 	}
-	return latest
+	return withWaitTimeoutSummary(latest, timeoutSeconds)
 }
 
 func GetTask(stateDir, taskID string) TaskPollStatusResult {
@@ -127,11 +129,12 @@ func readPollingResult(stateDir, taskID string) (TaskPollStatusResult, error) {
 	if err != nil {
 		return TaskPollStatusResult{}, err
 	}
+	summary := summarizeTaskStatus(task.Status, task.ProgressMessage, store.ReadSummary(taskID))
 	recommendedPollStrategy, nextPollAfterSeconds := pollingAdvice(task.Status)
 	return TaskPollStatusResult{
 		TaskID:                  task.ID,
 		Status:                  task.Status,
-		Summary:                 store.ReadSummary(taskID),
+		Summary:                 summary,
 		EventSeq:                task.EventSeq,
 		ProgressPercent:         task.ProgressPercent,
 		ProgressMessage:         task.ProgressMessage,
@@ -159,6 +162,69 @@ func pollingAdvice(status string) (string, int) {
 		return "stop", 0
 	}
 	return "wait_task", defaultWaitTaskTimeoutSeconds
+}
+
+func withWaitTimeoutSummary(result TaskPollStatusResult, timeoutSeconds int) TaskPollStatusResult {
+	if isTerminalPollingStatus(result.Status) {
+		return result
+	}
+	progress := compactSummaryText(result.ProgressMessage, 96)
+	if progress != "" {
+		result.Summary = fmt.Sprintf("wait_task timed out after %ds with no new events; call wait_task again to continue polling, or use get_task_logs for stdout/stderr details (%s)", timeoutSeconds, progress)
+		return result
+	}
+	result.Summary = fmt.Sprintf("wait_task timed out after %ds with no new events; call wait_task again to continue polling, or use get_task_logs for stdout/stderr details", timeoutSeconds)
+	return result
+}
+
+func summarizeTaskStatus(status, progressMessage, storedSummary string) string {
+	progress := compactSummaryText(firstNonEmpty(progressMessage, storedSummary), 96)
+	switch status {
+	case "running":
+		if progress != "" {
+			return fmt.Sprintf("task running; use wait_task to continue polling, use get_task_logs for stdout/stderr details (%s)", progress)
+		}
+		return "task running; use wait_task to continue polling, use get_task_logs for stdout/stderr details"
+	case "failed":
+		if progress != "" {
+			return fmt.Sprintf("task failed; use get_task_logs for stdout/stderr details before retrying (%s)", progress)
+		}
+		return "task failed; use get_task_logs for stdout/stderr details before retrying"
+	case "succeeded":
+		return "task succeeded; polling can stop, use get_task_logs only when full stdout/stderr is needed"
+	case "cancelled":
+		return "task cancelled; polling can stop, use get_task_logs only when final output details are needed"
+	default:
+		return compactSummaryText(firstNonEmpty(storedSummary, progressMessage), 120)
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func compactSummaryText(value string, maxLen int) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parts := strings.Fields(value)
+	if len(parts) == 0 {
+		return ""
+	}
+	joined := strings.Join(parts, " ")
+	if maxLen <= 0 || len(joined) <= maxLen {
+		return joined
+	}
+	if maxLen <= 3 {
+		return joined[:maxLen]
+	}
+	return joined[:maxLen-3] + "..."
 }
 
 func failedPollingResult(taskID, summary string) TaskPollStatusResult {

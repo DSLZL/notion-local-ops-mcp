@@ -164,6 +164,15 @@ ngrok：
 
 耗时命令、需要轮询进度或日志时，用 `run_command_stream`。它会立刻返回 `task_id`，之后优先用 `wait_task`，不要高频忙轮询 `get_task`。
 
+### 命令输入建议
+
+如果命令需要传大段文本，或者输入内容对引号、换行、转义比较敏感，优先通过请求字段把内容送进标准输入，不要依赖 heredoc 或复杂 shell 转义。
+
+- `run_command` 支持 `stdin`
+- `run_command` 也支持 `stdin_content`，作为更明确的别名字段
+
+两个字段都会走同一条标准输入通路，二选一即可。
+
 推荐轮询流程：
 
 1. 先调用 `run_command_stream`，保存返回的 `task_id`。
@@ -193,6 +202,15 @@ ngrok：
 `get_task_logs` 会按 `offset` / `next_offset` / `truncated` 返回增量日志切片。某个流暂时没有日志文件时，会按“空日志但成功”处理，而不是直接报错。
 
 如果要取消任务，调用 `cancel_task` 并传入同一个 `task_id`。只有在执行确实被中断时，任务才会进入 `cancelled`。
+
+### `write_file` 内容模式
+
+`write_file` 需要提供 `path`，并且以下两个内容字段必须且只能提供一个：
+
+- `content`：普通文本写入
+- `content_base64`：服务端先做 base64 解码，再按字节原样写入
+
+两种模式都支持 `dry_run`。非法 base64，或者同时传两个内容字段，都会返回校验错误。
 
 Python 脚本可以通过 stdout 输出结构化进度：
 

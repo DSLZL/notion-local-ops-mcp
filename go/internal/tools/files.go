@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,6 +65,13 @@ type WriteFileResult struct {
 	DryRun  bool   `json:"dry_run"`
 	Bytes   int    `json:"bytes"`
 	Summary string `json:"summary"`
+}
+
+type WriteFileOptions struct {
+	Path          string  `json:"path"`
+	Content       *string `json:"content,omitempty"`
+	ContentBase64 *string `json:"content_base64,omitempty"`
+	DryRun        bool    `json:"dry_run,omitempty"`
 }
 
 func ListFiles(workspace string, options any) (any, error) {
@@ -327,7 +335,21 @@ func readSingleText(workspace string, options ReadTextOptions) (ReadTextResult, 
 }
 
 func WriteFile(workspace, input, content string, dryRun bool, extraWriteDirs []string) (WriteFileResult, error) {
-	path, err := fsx.ResolveWritePath(workspace, input, extraWriteDirs)
+	contentCopy := content
+	return WriteFileWithOptions(workspace, WriteFileOptions{
+		Path:    input,
+		Content: &contentCopy,
+		DryRun:  dryRun,
+	}, extraWriteDirs)
+}
+
+func WriteFileWithOptions(workspace string, options WriteFileOptions, extraWriteDirs []string) (WriteFileResult, error) {
+	data, err := resolveWriteFileContent(options)
+	if err != nil {
+		return WriteFileResult{}, err
+	}
+
+	path, err := fsx.ResolveWritePath(workspace, options.Path, extraWriteDirs)
 	if err != nil {
 		return WriteFileResult{}, err
 	}
@@ -340,12 +362,12 @@ func WriteFile(workspace, input, content string, dryRun bool, extraWriteDirs []s
 		return WriteFileResult{}, err
 	}
 
-	if dryRun {
+	if options.DryRun {
 		return WriteFileResult{
 			Success: true,
 			Path:    path,
 			DryRun:  true,
-			Bytes:   len([]byte(content)),
+			Bytes:   len(data),
 			Summary: "dry run: file write validated",
 		}, nil
 	}
@@ -354,16 +376,32 @@ func WriteFile(workspace, input, content string, dryRun bool, extraWriteDirs []s
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return WriteFileResult{}, err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return WriteFileResult{}, err
 	}
 	return WriteFileResult{
 		Success: true,
 		Path:    path,
 		DryRun:  false,
-		Bytes:   len([]byte(content)),
+		Bytes:   len(data),
 		Summary: "file written",
 	}, nil
+}
+
+func resolveWriteFileContent(options WriteFileOptions) ([]byte, error) {
+	hasContent := options.Content != nil
+	hasContentBase64 := options.ContentBase64 != nil
+	if hasContent == hasContentBase64 {
+		return nil, fmt.Errorf("exactly one of content or content_base64 must be provided")
+	}
+	if hasContent {
+		return []byte(*options.Content), nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(*options.ContentBase64)
+	if err != nil {
+		return nil, fmt.Errorf("decode content_base64: %w", err)
+	}
+	return decoded, nil
 }
 
 func maxInt(a, b int) int {

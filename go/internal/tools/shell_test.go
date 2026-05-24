@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"runtime"
 	"testing"
 	"time"
@@ -65,7 +68,7 @@ func TestRunCommandStreamReturnsBeforeCommandCompletes(t *testing.T) {
 }
 
 func TestRunCommandReturnsStdoutAndExitCode(t *testing.T) {
-	result := RunCommand(".", "echo hello", "", 5)
+	result := RunCommand(".", "echo hello", "", "", 5)
 	if !result.Success {
 		t.Fatalf("success = %v, want true; stderr=%q", result.Success, result.Stderr)
 	}
@@ -81,7 +84,7 @@ func TestRunCommandReturnsStdoutAndExitCode(t *testing.T) {
 }
 
 func TestRunCommandMissingCWDReturnsUnifiedShape(t *testing.T) {
-	result := RunCommand(".", "echo hello", "does-not-exist", 5)
+	result := RunCommand(".", "echo hello", "does-not-exist", "", 5)
 	if result.Success {
 		t.Fatal("success = true, want false")
 	}
@@ -99,6 +102,73 @@ func TestRunCommandMissingCWDReturnsUnifiedShape(t *testing.T) {
 	}
 	if result.Error["code"] != "cwd_not_found" {
 		t.Fatalf("error.code = %v, want cwd_not_found", result.Error["code"])
+	}
+}
+
+func TestRunCommandWithStdinContent(t *testing.T) {
+	result := RunCommand(".", stdinEchoCommand(), "", "stdin-ok\n", 5)
+	if !result.Success {
+		t.Fatalf("success = %v, want true; stderr=%q", result.Success, result.Stderr)
+	}
+	if strings.TrimSpace(result.Stdout) != "stdin-ok" {
+		t.Fatalf("stdout = %q, want %q", result.Stdout, "stdin-ok")
+	}
+}
+
+func TestRunCommandTimeoutReturnsStableHint(t *testing.T) {
+	result := RunCommand(".", slowTimeoutCommand(), "", "", 1)
+	if result.Success {
+		t.Fatal("success = true, want false")
+	}
+	if !result.TimedOut {
+		t.Fatal("timed_out = false, want true")
+	}
+	if result.Error == nil || result.Error["code"] != "timed_out" {
+		t.Fatalf("error.code = %v, want timed_out", result.Error["code"])
+	}
+	if result.Hint != runCommandTimeoutHint {
+		t.Fatalf("hint = %q, want %q", result.Hint, runCommandTimeoutHint)
+	}
+	msg, _ := result.Error["message"].(string)
+	if !strings.Contains(msg, "run_command_stream") {
+		t.Fatalf("timeout message = %q, want mention run_command_stream", msg)
+	}
+	if !strings.Contains(msg, "stdout.log") || !strings.Contains(msg, "stderr.log") {
+		t.Fatalf("timeout message = %q, want mention task logs", msg)
+	}
+}
+
+func TestRunCommandCWDNotDirectoryReturnsUnifiedShape(t *testing.T) {
+	workspace := t.TempDir()
+	fileCWD := filepath.Join(workspace, "not-a-dir.txt")
+	if err := os.WriteFile(fileCWD, []byte("x"), 0o600); err != nil {
+		t.Fatalf("setup write failed: %v", err)
+	}
+	result := RunCommand(workspace, "echo hello", fileCWD, "", 5)
+	if result.Success {
+		t.Fatal("success = true, want false")
+	}
+	if result.TimedOut {
+		t.Fatal("timed_out = true, want false")
+	}
+	if result.Error["code"] != "cwd_not_directory" {
+		t.Fatalf("error.code = %v, want cwd_not_directory", result.Error["code"])
+	}
+}
+
+func TestRunCommandStartFailureReturnsUnifiedShape(t *testing.T) {
+	result := RunCommand(".", "echo hello\x00world", "", "", 5)
+	if result.Success {
+		t.Fatal("success = true, want false")
+	}
+	if result.TimedOut {
+		t.Fatal("timed_out = true, want false")
+	}
+	if result.Error["code"] != "command_start_failed" {
+		t.Fatalf("error.code = %v, want command_start_failed", result.Error["code"])
+	}
+	if result.Stderr == "" {
+		t.Fatal("stderr = empty, want non-empty")
 	}
 }
 
@@ -130,4 +200,18 @@ func slowStreamCommand() string {
 		return `powershell -NoProfile -Command "Start-Sleep -Milliseconds 900; Write-Output stream-ok"`
 	}
 	return `sleep 0.9; printf 'stream-ok\n'`
+}
+
+func slowTimeoutCommand() string {
+	if runtime.GOOS == "windows" {
+		return `ping 127.0.0.1 -n 6 > NUL`
+	}
+	return `sleep 2; printf 'done\n'`
+}
+
+func stdinEchoCommand() string {
+	if runtime.GOOS == "windows" {
+		return `more`
+	}
+	return `cat`
 }

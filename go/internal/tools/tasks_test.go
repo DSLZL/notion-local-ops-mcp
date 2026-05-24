@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,8 +36,8 @@ func TestWaitTaskReturnsTerminalTaskImmediately(t *testing.T) {
 	if result.NextPollAfterSeconds != 0 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 0", result.NextPollAfterSeconds)
 	}
-	if result.Summary != "task finished" {
-		t.Fatalf("Summary = %q, want %q", result.Summary, "task finished")
+	if result.Summary != "task succeeded; polling can stop, use get_task_logs only when full stdout/stderr is needed" {
+		t.Fatalf("Summary = %q, want succeeded guidance", result.Summary)
 	}
 }
 
@@ -90,6 +91,15 @@ func TestWaitTaskBlocksUntilEventSeqChanges(t *testing.T) {
 	if result.NextPollAfterSeconds != 1 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 1", result.NextPollAfterSeconds)
 	}
+	if !strings.Contains(result.Summary, "task running; use wait_task") {
+		t.Fatalf("Summary = %q, want running wait_task guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "get_task_logs") {
+		t.Fatalf("Summary = %q, want get_task_logs guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "almost there") {
+		t.Fatalf("Summary = %q, want progress hint", result.Summary)
+	}
 }
 
 func TestWaitTaskReturnsLatestStateAfterTimeout(t *testing.T) {
@@ -133,8 +143,17 @@ func TestWaitTaskReturnsLatestStateAfterTimeout(t *testing.T) {
 	if result.NextPollAfterSeconds != 1 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 1", result.NextPollAfterSeconds)
 	}
-	if result.Summary != "halfway" {
-		t.Fatalf("Summary = %q, want %q", result.Summary, "halfway")
+	if !strings.Contains(result.Summary, "wait_task timed out") {
+		t.Fatalf("Summary = %q, want timeout marker", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "get_task_logs") {
+		t.Fatalf("Summary = %q, want get_task_logs guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "call wait_task again") {
+		t.Fatalf("Summary = %q, want next-step wait_task guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "halfway") {
+		t.Fatalf("Summary = %q, want progress hint", result.Summary)
 	}
 }
 
@@ -192,8 +211,8 @@ func TestWaitTaskReturnsTerminalTaskWhenItCompletesDuringWait(t *testing.T) {
 	if result.NextPollAfterSeconds != 0 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 0", result.NextPollAfterSeconds)
 	}
-	if result.Summary != "done" {
-		t.Fatalf("Summary = %q, want %q", result.Summary, "done")
+	if result.Summary != "task succeeded; polling can stop, use get_task_logs only when full stdout/stderr is needed" {
+		t.Fatalf("Summary = %q, want succeeded guidance", result.Summary)
 	}
 }
 
@@ -249,8 +268,14 @@ func TestWaitTaskIgnoresTransientReadFailuresDuringWait(t *testing.T) {
 	if result.NextPollAfterSeconds != 1 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 1", result.NextPollAfterSeconds)
 	}
-	if result.Summary != "almost there" {
-		t.Fatalf("Summary = %q, want %q", result.Summary, "almost there")
+	if !strings.Contains(result.Summary, "task running; use wait_task") {
+		t.Fatalf("Summary = %q, want running wait_task guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "get_task_logs") {
+		t.Fatalf("Summary = %q, want get_task_logs guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "almost there") {
+		t.Fatalf("Summary = %q, want progress hint", result.Summary)
 	}
 }
 
@@ -291,8 +316,45 @@ func TestGetTaskReturnsRicherPollingFields(t *testing.T) {
 	if result.NextPollAfterSeconds != 1 {
 		t.Fatalf("NextPollAfterSeconds = %d, want 1", result.NextPollAfterSeconds)
 	}
-	if result.Summary != "halfway" {
-		t.Fatalf("Summary = %q, want %q", result.Summary, "halfway")
+	if !strings.Contains(result.Summary, "task running; use wait_task") {
+		t.Fatalf("Summary = %q, want running wait_task guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "get_task_logs") {
+		t.Fatalf("Summary = %q, want get_task_logs guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "halfway") {
+		t.Fatalf("Summary = %q, want progress hint", result.Summary)
+	}
+}
+
+func TestGetTaskReturnsFailureGuidance(t *testing.T) {
+	stateDir := t.TempDir()
+	store, task := createPollingTaskForTest(t, stateDir)
+	task.Status = "failed"
+	task.EventSeq = 12
+	task.ProgressMessage = "exit code 3"
+	task.HeartbeatAt = time.Now().UTC().Format(time.RFC3339Nano)
+	task = updatePollingTaskForTest(t, store, task)
+	writePollingSummaryForTest(t, store, task.ID, "boom\ntrace line")
+
+	result := GetTask(stateDir, task.ID)
+	if result.Status != "failed" {
+		t.Fatalf("Status = %q, want failed", result.Status)
+	}
+	if result.RecommendedPollStrategy != "stop" {
+		t.Fatalf("RecommendedPollStrategy = %q, want stop", result.RecommendedPollStrategy)
+	}
+	if result.NextPollAfterSeconds != 0 {
+		t.Fatalf("NextPollAfterSeconds = %d, want 0", result.NextPollAfterSeconds)
+	}
+	if !strings.Contains(result.Summary, "task failed; use get_task_logs") {
+		t.Fatalf("Summary = %q, want failure log guidance", result.Summary)
+	}
+	if !strings.Contains(result.Summary, "exit code 3") {
+		t.Fatalf("Summary = %q, want concise progress hint", result.Summary)
+	}
+	if strings.Contains(result.Summary, "\n") {
+		t.Fatalf("Summary = %q, want single-line concise text", result.Summary)
 	}
 }
 
@@ -360,12 +422,12 @@ func TestCancelTaskCancelsRunningTask(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		final = GetTask(stateDir, submitted.TaskID)
-		if final.Summary == "cancelled" {
+		if strings.Contains(final.Summary, "task cancelled; polling can stop") {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("Summary = %q, want cancelled", final.Summary)
+	t.Fatalf("Summary = %q, want cancelled guidance", final.Summary)
 }
 
 func createPollingTaskForTest(t *testing.T, stateDir string) (*taskstore.FSStore, taskstore.Task) {

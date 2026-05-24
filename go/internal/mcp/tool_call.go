@@ -121,12 +121,15 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 		if err != nil {
 			return nil, err
 		}
-		content, err := requiredStringParam(params, "content")
-		if err != nil {
-			return nil, err
-		}
 		dryRun, _ := boolParam(params, "dry_run")
-		return toolSuccessResult(mustWriteFile(workspaceRoot, path, content, dryRun, cfg.ExtraWriteDirs))
+		content, hasContent := stringParam(params, "content")
+		contentBase64, hasContentBase64 := stringParam(params, "content_base64")
+		return toolSuccessResult(mustWriteFileWithOptions(workspaceRoot, tools.WriteFileOptions{
+			Path:          path,
+			Content:       optionalStringPtr(content, hasContent),
+			ContentBase64: optionalStringPtr(contentBase64, hasContentBase64),
+			DryRun:        dryRun,
+		}, cfg.ExtraWriteDirs))
 	case "search":
 		mode, _ := stringParam(params, "mode")
 		path, _ := stringParam(params, "path")
@@ -162,7 +165,7 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 		cwd, _ := stringParam(params, "cwd")
 		runInBackground, _ := boolParam(params, "run_in_background")
 		timeout, _ := intParam(params, "timeout")
-		stdinContent, _ := stringParam(params, "stdin")
+		stdinContent := firstStringParam(params, "stdin", "stdin_content")
 		if runInBackground {
 			return toolSuccessResult(tools.RunCommandStream(stateDir, workspaceRoot, commandText, cwd, timeout))
 		}
@@ -325,6 +328,19 @@ func mustWriteFile(workspaceRoot, path, content string, dryRun bool, extraWriteD
 	return result
 }
 
+func mustWriteFileWithOptions(workspaceRoot string, options tools.WriteFileOptions, extraWriteDirs []string) tools.WriteFileResult {
+	result, err := tools.WriteFileWithOptions(workspaceRoot, options, extraWriteDirs)
+	if err != nil {
+		return tools.WriteFileResult{
+			Success: false,
+			Path:    options.Path,
+			DryRun:  options.DryRun,
+			Summary: err.Error(),
+		}
+	}
+	return result
+}
+
 func toolSuccessResult(payload any) (map[string]any, error) {
 	rendered, err := json.Marshal(payload)
 	if err != nil {
@@ -359,6 +375,22 @@ func stringParam(params map[string]any, key string) (string, bool) {
 		return "", false
 	}
 	return value, true
+}
+
+func firstStringParam(params map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := stringParam(params, key); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+func optionalStringPtr(value string, ok bool) *string {
+	if !ok {
+		return nil
+	}
+	return &value
 }
 
 func boolParam(params map[string]any, key string) (bool, bool) {

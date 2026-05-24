@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,7 +29,10 @@ type TaskPollingResult struct {
 	Summary string `json:"summary"`
 }
 
-const TimeoutExitCode = -1
+const (
+	TimeoutExitCode       = -1
+	runCommandTimeoutHint = "use_run_command_stream_task_logs"
+)
 
 // GracePeriod is the time between SIGTERM and SIGKILL on timeout.
 const GracePeriod = 5 * time.Second
@@ -110,9 +115,7 @@ func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds
 
 	cmd := exec.CommandContext(ctx, commandName, commandArgs...)
 	cmd.Dir = resolvedCWD
-	// Ensure the child process gets its own process group so we can signal the
-	// entire group on timeout.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	enableProcessGroup(cmd)
 
 	// --- Pipe-based I/O so we always capture partial output ---
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -131,17 +134,7 @@ func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds
 	}
 
 	if err := cmd.Start(); err != nil {
-		return RunCommandResult{
-			Success:  false,
-			Command:  commandText,
-			CWD:      resolvedCWD,
-			ExitCode: TimeoutExitCode,
-			Stderr:   err.Error(),
-			Error: map[string]any{
-				"code":    "command_start_failed",
-				"message": err.Error(),
-			},
-		}
+		return commandStartErrorResult(commandText, resolvedCWD, err)
 	}
 
 	// Drain pipes in background goroutines.
@@ -208,10 +201,7 @@ func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds
 			ExitCode: TimeoutExitCode,
 			Stdout:   stdoutBuf.String(),
 			Stderr:   waitErr.Error(),
-			Error: map[string]any{
-				"code":    "command_start_failed",
-				"message": waitErr.Error(),
-			},
+			Error:    commandStartErrorResult(commandText, resolvedCWD, waitErr).Error,
 		}
 
 	case <-timer.C:
@@ -239,11 +229,11 @@ func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds
 			Error: map[string]any{
 				"code": "timed_out",
 				"message": fmt.Sprintf(
-					"Command exceeded the %ds timeout. Partial output is preserved above. Retry with a larger `timeout` argument, or set `run_in_background=true` to queue it as a task and poll with wait_task/get_task.",
+					"Command exceeded the %ds timeout. Partial output is preserved above. Retry with a larger `timeout` argument, or use `run_command_stream` and inspect task logs (`stdout.log` / `stderr.log`) via `wait_task` / `get_task`.",
 					timeoutSeconds,
 				),
 			},
-			Hint: "consider_run_command_stream",
+			Hint: runCommandTimeoutHint,
 		}
 	}
 
@@ -255,37 +245,63 @@ func RunCommand(workspace, commandText, cwd, stdinContent string, timeoutSeconds
 	}
 }
 
-// gracefulKill sends SIGTERM to the process group, waits GracePeriod, then
-// sends SIGKILL if the process has not exited.
+// gracefulKill attempts graceful process-group termination on Unix-like systems
+// and falls back to direct process kill on platforms without process-group
+// controls.
 func gracefulKill(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
+
 	pid := cmd.Process.Pid
-	// Send SIGTERM to the entire process group.
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
-
-	// Give the process a grace period to clean up.
-	done := make(chan struct{})
-	go func() {
-		// cmd.Wait() may have already been called, so we just poll ProcessState.
-		for i := 0; i < 50; i++ {
-			time.Sleep(100 * time.Millisecond)
-			if cmd.ProcessState != nil {
-				close(done)
-				return
+	if runtime.GOOS != "windows" && pid > 0 {
+		// First try graceful group termination.
+		_ = sendGroupSignal(pid, "-TERM")
+		done := make(chan struct{})
+		go func() {
+			for i := 0; i < 50; i++ {
+				time.Sleep(100 * time.Millisecond)
+				if cmd.ProcessState != nil {
+					close(done)
+					return
+				}
 			}
-		}
-		close(done)
-	}()
+			close(done)
+		}()
 
-	select {
-	case <-done:
-		// Process exited gracefully.
-	case <-time.After(GracePeriod):
-		// Force kill.
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		select {
+		case <-done:
+			return
+		case <-time.After(GracePeriod):
+			// Escalate to forceful group termination.
+			_ = sendGroupSignal(pid, "-KILL")
+			return
+		}
 	}
+
+	_ = cmd.Process.Kill()
+}
+
+func enableProcessGroup(cmd *exec.Cmd) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// Keep this buildable on Windows by setting Setpgid reflectively.
+	attr := cmd.SysProcAttr
+	if attr == nil {
+		attr = &syscall.SysProcAttr{}
+	}
+	v := reflect.ValueOf(attr).Elem()
+	field := v.FieldByName("Setpgid")
+	if field.IsValid() && field.CanSet() && field.Kind() == reflect.Bool {
+		field.SetBool(true)
+		cmd.SysProcAttr = attr
+	}
+}
+
+func sendGroupSignal(pid int, sig string) error {
+	// Use external kill to avoid platform-specific syscall symbol differences.
+	return exec.Command("kill", sig, "-"+strconv.Itoa(pid)).Run()
 }
 
 func taskPollingRoot() string {
@@ -332,6 +348,7 @@ func runStreamCommand(ctx context.Context, workspace, commandText, cwd string, t
 
 	cmd := exec.CommandContext(ctx, command.Name, command.Args...)
 	cmd.Dir = command.Dir
+	enableProcessGroup(cmd)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -402,6 +419,13 @@ func runStreamCommand(ctx context.Context, workspace, commandText, cwd string, t
 		result.ExitCode = TimeoutExitCode
 		if result.Stderr == "" {
 			result.Stderr = ctx.Err().Error()
+		}
+		return result, context.Canceled
+	}
+	if errors.Is(waitErr, context.Canceled) {
+		result.ExitCode = TimeoutExitCode
+		if result.Stderr == "" {
+			result.Stderr = waitErr.Error()
 		}
 		return result, context.Canceled
 	}
@@ -479,6 +503,20 @@ func commandPathErrorResult(commandText, cwd, code, message string) RunCommandRe
 		Error: map[string]any{
 			"code":    code,
 			"message": message,
+		},
+	}
+}
+
+func commandStartErrorResult(commandText, cwd string, err error) RunCommandResult {
+	return RunCommandResult{
+		Success:  false,
+		Command:  commandText,
+		CWD:      cwd,
+		ExitCode: TimeoutExitCode,
+		Stderr:   err.Error(),
+		Error: map[string]any{
+			"code":    "command_start_failed",
+			"message": err.Error(),
 		},
 	}
 }

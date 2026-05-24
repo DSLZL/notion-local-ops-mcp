@@ -164,6 +164,15 @@ Use `run_command` for short foreground commands that should finish within one MC
 
 Use `run_command_stream` for commands that may take longer or need progress/log polling. It returns a `task_id` immediately, then clients should prefer `wait_task` over busy-looping `get_task`.
 
+### Command input guidance
+
+If a command needs large inline input or quote-sensitive payloads, prefer request-driven stdin input over shell heredocs or complex escaping.
+
+- `run_command` accepts `stdin`
+- `run_command` also accepts `stdin_content` as an alias for clients that prefer a more explicit field name
+
+Both fields feed the same standard-input path; use one or the other, not both.
+
 Recommended polling flow:
 
 1. Call `run_command_stream` and save the returned `task_id`.
@@ -193,6 +202,15 @@ Example `get_task_logs` request shape:
 `get_task_logs` returns incremental slices using `offset`, `next_offset`, and `truncated`. Missing log files for an empty stream are treated as an empty successful read.
 
 To cancel a running task, call `cancel_task` with the same `task_id`. The task will move to `cancelled` only if execution was actually interrupted before completion.
+
+### `write_file` content modes
+
+`write_file` requires `path` and accepts exactly one of:
+
+- `content` for normal text writes
+- `content_base64` for byte-for-byte decoded writes sent safely through the request body
+
+Both modes support `dry_run`. Invalid base64 and conflicting content fields return validation errors.
 
 Python scripts can emit structured progress lines on stdout:
 
