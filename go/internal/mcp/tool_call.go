@@ -244,6 +244,73 @@ func CallTool(cfg config.Config, name string, params map[string]any) (map[string
 			return nil, err
 		}
 		return toolSuccessResult(result)
+	case "tcp_connect":
+		host, err := requiredStringParam(params, "host")
+		if err != nil {
+			return nil, err
+		}
+		port, ok := intParam(params, "port")
+		if !ok {
+			return nil, fmt.Errorf("port is required")
+		}
+		timeoutSeconds, _ := intParam(params, "timeout_seconds")
+		result, err := tools.TCPConnect(stateDir, tools.TCPConnectOptions{
+			Host:           host,
+			Port:           port,
+			TimeoutSeconds: timeoutSeconds,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "tcp_send":
+		connectionID, err := requiredStringParam(params, "connection_id")
+		if err != nil {
+			return nil, err
+		}
+		text, _ := stringParam(params, "text")
+		contentBase64, _ := stringParam(params, "content_base64")
+		appendNewline, _ := boolParam(params, "append_newline")
+		result, err := tools.TCPSend(stateDir, connectionID, tools.TCPSendOptions{
+			Text:          text,
+			ContentBase64: contentBase64,
+			AppendNewline: appendNewline,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "tcp_read":
+		connectionID, err := requiredStringParam(params, "connection_id")
+		if err != nil {
+			return nil, err
+		}
+		timeoutSeconds, _ := intParam(params, "timeout_seconds")
+		maxBytes, _ := intParam(params, "max_bytes")
+		readUntil, _ := stringParam(params, "read_until")
+		readUntilBase64, _ := stringParam(params, "read_until_base64")
+		outputMode, _ := stringParam(params, "output_mode")
+		result, err := tools.TCPRead(stateDir, connectionID, tools.TCPReadOptions{
+			TimeoutSeconds:  timeoutSeconds,
+			MaxBytes:        maxBytes,
+			ReadUntil:       readUntil,
+			ReadUntilBase64: readUntilBase64,
+			OutputMode:      outputMode,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
+	case "tcp_close":
+		connectionID, err := requiredStringParam(params, "connection_id")
+		if err != nil {
+			return nil, err
+		}
+		result, err := tools.TCPClose(stateDir, connectionID)
+		if err != nil {
+			return nil, err
+		}
+		return toolSuccessResult(result)
 	case "wait_task":
 		taskID, err := requiredStringParam(params, "task_id")
 		if err != nil {

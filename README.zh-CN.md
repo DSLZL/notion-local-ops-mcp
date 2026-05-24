@@ -150,6 +150,10 @@ ngrok：
 - `send_shell_input`
 - `read_shell_output`
 - `close_shell_session`
+- `tcp_connect`
+- `tcp_send`
+- `tcp_read`
+- `tcp_close`
 - `wait_task`
 - `get_task`
 - `get_task_logs`
@@ -181,6 +185,58 @@ Phase 1 新增了 Linux 优先的 PTY 持久 shell session，用来覆盖需要�
 - 只在 Linux / 容器运行时完整支持
 - 非 Linux 平台会明确返回 unsupported 错误
 - session 与 background task 分开存储，状态落在 `STATE_DIR/sessions`
+
+## 原生 TCP 工具（Phase 2，仅 TCP）
+
+Phase 2 增加了面向 CTF 交互服务的原生持久 TCP 工作流：
+
+1. `tcp_connect` 建立出站 TCP 连接，并返回持久 `connection_id`。
+2. `tcp_send` 向该连接写入数据。
+3. `tcp_read` 按超时、最大字节数、可选分隔符做增量读取。
+4. `tcp_close` 关闭连接并标记为 inactive。
+
+载荷规则：
+
+- `tcp_send` 每次调用只能使用一种载荷模式：
+  - `text`：普通文本
+  - `content_base64`：原始字节（base64 编码传输）
+- `append_newline` 用于 text 模式下便捷追加换行。
+- `tcp_read` 默认输出 text；需要按字节安全传输时可设置 `output_mode: "base64"`。
+
+分隔符规则：
+
+- `read_until`：文本分隔符匹配
+- `read_until_base64`：字节分隔符（base64 编码）
+- 一次 `tcp_read` 只应使用一种分隔符字段
+
+持久化与重启行为：
+
+- 连接元数据和 I/O 日志会持久化到 `STATE_DIR/connections`。
+- 活跃 socket 仅存在于当前进程内，服务重启后不会自动恢复。
+- 重启后元数据仍可查看，但旧连接不再 active。
+
+实用 MCP 流程示例：
+
+```json
+{
+  "name": "tcp_connect",
+  "host": "127.0.0.1",
+  "port": 31337,
+  "timeout_seconds": 2
+}
+```
+
+然后按顺序调用：
+
+1. `tcp_read` 读取初始 banner / prompt
+2. `tcp_send` 发送 `text`（或按需发送 `content_base64`）
+3. `tcp_read` 再次读取，必要时配合 `read_until` / `read_until_base64`
+4. 结束后调用 `tcp_close`
+
+Phase 2 范围说明：
+
+- 本节仅覆盖 TCP。
+- UDP、TLS 专用工具、以及 server/listener 模式都不在 Phase 2 范围内。
 
 ## 长任务命令流
 

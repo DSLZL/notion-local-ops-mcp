@@ -150,6 +150,10 @@ The default Go runtime now covers the everyday MCP surface that the old Python r
 - `send_shell_input`
 - `read_shell_output`
 - `close_shell_session`
+- `tcp_connect`
+- `tcp_send`
+- `tcp_read`
+- `tcp_close`
 - `wait_task`
 - `get_task`
 - `get_task_logs`
@@ -181,6 +185,58 @@ Current Phase 1 limits:
 - fully supported only on Linux/container runtime
 - non-Linux platforms return an explicit unsupported error
 - sessions are separate from background tasks and persist under `STATE_DIR/sessions`
+
+## Native TCP Tools (Phase 2, TCP-only)
+
+Phase 2 adds a native persistent TCP client workflow for CTF-style interactive services:
+
+1. `tcp_connect` opens an outbound TCP connection and returns a persistent `connection_id`.
+2. `tcp_send` writes data to that connection.
+3. `tcp_read` reads data incrementally with timeout, max-bytes, and optional delimiter matching.
+4. `tcp_close` closes the connection and marks it inactive.
+
+Payload rules:
+
+- `tcp_send` accepts exactly one payload mode per call:
+  - `text` for plain text
+  - `content_base64` for raw bytes
+- `append_newline` is for text mode convenience.
+- `tcp_read` defaults to text output; set `output_mode: "base64"` for raw-byte-safe output.
+
+Delimiter rules:
+
+- `read_until` matches a text delimiter.
+- `read_until_base64` matches a byte delimiter encoded as base64.
+- Only one delimiter field should be used per read call.
+
+Persistence and restart behavior:
+
+- Connection metadata and I/O logs are persisted under `STATE_DIR/connections`.
+- Live sockets are process-local and are not resumed after server restart.
+- After restart, metadata remains for inspection, but previous live connections are no longer active.
+
+Practical MCP flow example:
+
+```json
+{
+  "name": "tcp_connect",
+  "host": "127.0.0.1",
+  "port": 31337,
+  "timeout_seconds": 2
+}
+```
+
+Then call:
+
+1. `tcp_read` to read the initial banner/prompt.
+2. `tcp_send` with `text` (or `content_base64` when needed).
+3. `tcp_read` again with `read_until` / `read_until_base64` when prompt-driven.
+4. `tcp_close` when done.
+
+Scope note for Phase 2:
+
+- This section is TCP-only.
+- UDP, TLS-specific tools, and server/listener mode are not included in Phase 2.
 
 ## Long-running Commands
 
